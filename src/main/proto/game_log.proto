@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package botc;
+option java_package = "com.botc.game";
+
+enum Role {
+    ROLE_UNSPECIFIED = 0;
+    // Trouble Brewing roles
+    // Townsfolk
+    WASHERWOMAN = 1;
+    LIBRARIAN = 2;
+    INVESTIGATOR = 3;
+    CHEF = 4;
+    EMPATH = 5;
+    FORTUNE_TELLER = 6;
+    UNDERTAKER = 7;
+    MONK = 8;
+    RAVENKEEPER = 9;
+    VIRGIN = 10;
+    SLAYER = 11;
+    SOLDIER = 12;
+    MAYOR = 13;
+    // Outsiders
+    BUTLER = 14;
+    DRUNK = 15;
+    RECLUSE = 16;
+    SAINT = 17;
+    // Minions
+    POISONER = 18;
+    SPY = 19;
+    SCARLET_WOMAN = 20;
+    BARON = 21;
+    // Demons
+    IMP = 22;
+}
+
+// Each game is seen from a given perspective.
+enum Perspective {
+    PERSPECTIVE_UNSPECIFIED = 0;
+    STORYTELLER = 1; // Contains the full info.
+    PLAYER = 2; // Contains the full info available to a particular player.
+    OBSERVER = 3; // Contains only public info.
+}
+
+// The setup contains all the grimoire tokens that the storyteller must assign
+// when creating the game, before start. In player and observer perspectives,
+// it will only contain public information.
+message Setup {
+    // The player circle, in order.
+    // We use strings for player names, because we're optimizing for
+    // readability of the text protos over everything else, since this is our
+    // chosen game description format.
+    repeated string players = 1;
+
+    // The correct numbers for the current player count *before* any roles
+    // modifications.
+    int32 num_outsiders = 2;
+    int32 num_minions = 3; // There is always 1 demon. The rest are townsfolk.
+    // TODO: Support travelers.
+
+    // The actual roles assigned by the Storyteller. Only visible in the ST
+    // perspective. E.g. the Drunk will appear here as DRUNK.
+    message PlayerRole {
+        string player = 1;
+        Role role = 2;
+    }
+    repeated PlayerRole player_roles = 4;
+
+    // Special startup fields for particular roles.
+    string red_herring = 5; // The Fortune Teller's red herring.
+}
+
+// Generalizes the TB top-3 info roles that get two pings and a role.
+message LearnRoleInfo {
+    string ping1 = 1;
+    string ping2 = 2;
+    Role role = 3;
+}
+
+message FortuneTellerAction {
+    string pick1 = 1;
+    string pick2 = 2;
+    bool yes = 3;
+}
+
+message RavenkeeperInfo {
+    string pick = 1;
+    Role role = 2;
+}
+
+// Currently, there's no sense to encode the Spy info because I don't need it
+// to consider it in code for the open strategy.
+
+message RoleAction {
+    oneof details {
+        LearnRoleInfo washerwoman_info = 6;
+        LearnRoleInfo librarian_info = 7;
+        LearnRoleInfo investigator_info = 8;
+        int32 chef_info = 9;
+        int32 empath_info = 10;
+        FortuneTellerAction fortuneteller_action = 11;
+        string monk_action = 12;
+        string butler_action = 13;
+        RavenkeeperInfo ravenkeeper_info = 14;
+        Role undertaker_info = 15;
+        string slayer_action = 16;
+        string poisoner_action = 17;
+        string imp_action = 18;
+    }
+}
+
+// The claims are the public information of player roles. They do not
+// necessarily correspond to actual roles (people lie!)
+message Claim {
+    string player = 1;
+    Role role = 2;
+    // The info relates to the last storyteller interaction.
+    RoleAction info = 3;
+}
+
+message MinionInfo {
+    string demon = 1;
+    repeated string minions = 2;
+}
+
+message DemonInfo {
+    repeated string minions = 1;
+    repeated Role bluffs = 2;
+}
+
+// These events will only appear in the ST perspective of the game. They are
+// what actually happened, as opposed to claims.
+message StorytellerInteraction {
+    string player = 1;
+    oneof details {
+        Role shown_token = 2;
+        MinionInfo minion_info = 3;
+        DemonInfo demon_info = 4;
+        RoleAction role_action = 5;
+    }
+}
+
+message Nomination {
+    string nominator = 1;
+    string nominee = 2;
+}
+
+enum Team {
+    TEAM_UNSPECIFIED = 0;
+    GOOD = 1;
+    EVIL = 2;
+}
+
+// Currently, no need for recording the vote results, or who is on the block.
+
+// The game is an ordered stream of events.
+message Event {
+    oneof details {
+        int32 day = 1; // Start of day.
+        int32 night = 2; // Start of night.
+        StorytellerInteraction storyteller_interaction = 3;
+        Nomination nomination = 4;
+        string execution = 5;
+        string death = 6; // Sotryteller announces that the player is dead.
+        // (Night deaths become public info on start of next day).
+        Claim claim = 7;
+        Team victory = 8; // Game end. Must be the last event, if present.
+    }
+}
+
+message BotcLog {
+    Perspective perspective = 1;
+    Setup setup = 2;
+    repeated Event events = 3;
+}
