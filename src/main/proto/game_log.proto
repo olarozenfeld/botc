@@ -88,8 +88,33 @@ message RavenkeeperInfo {
     Role role = 2;
 }
 
-// Currently, there's no sense to encode the Spy info because I don't need it
-// to consider it in code for the open strategy.
+// The Spy info is player roles plus tokens.
+enum Token {
+    TOKEN_UNSPECIFIED = 0;
+    IS_DRUNK = 1;
+    POISONED = 2;
+    SPENT_VIRGIN = 3;
+    SPENT_SLAYER = 4;
+    BUTLER_MASTER = 5;
+    IMP_DEAD = 6;
+    LIBRARIAN_OUTSIDER = 7;
+    LIBRARIAN_WRONG = 8;
+    INVESTIGATOR_MINION = 9;
+    INVESTIGATOR_WRONG = 10;
+    WASHERWOMAN_TOWNSFOLK = 11;
+    WASHERWOMAN_WRONG = 12;
+    FORTUNE_TELLER_RED_HERRING = 13;
+    // For travelers, add GOOD and EVIL.
+}
+
+message SpyInfo {
+    message PlayerSpyInfo {
+        string player = 1;
+        Role role = 2;
+        repeated Token token = 3;
+    }
+    repeated PlayerSpyInfo player_info = 1;
+}
 
 message RoleAction {
     oneof details {
@@ -106,6 +131,7 @@ message RoleAction {
         string slayer_action = 16;
         string poisoner_action = 17;
         string imp_action = 18;
+        SpyInfo spy_info = 19;
     }
 }
 

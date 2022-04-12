@@ -1,0 +1,264 @@
+perspective: STORYTELLER
+setup {
+    players: "Alke"
+    players: "Pykmo"
+    players: "Viessa"
+    players: "Hagmer"
+    players: "Axylia"
+    # Teensy-ville, no minion or demon info.
+    num_outsiders: 0
+    num_minions: 1
+    player_roles {
+        player: "Alke"
+        role: VIRGIN
+    }
+    player_roles {
+        player: "Pykmo"
+        role: SPY
+    }
+    player_roles {
+        player: "Viessa"
+        role: EMPATH
+    }
+    player_roles {
+        player: "Hagmer"
+        role: FORTUNE_TELLER
+    }
+    player_roles {
+        player: "Axylia"
+        role: IMP
+    }
+    red_herring: "Viessa"
+}
+events {
+    night: 1
+}
+events {
+    storyteller_interaction {
+        player: "Alke"
+        shown_token: VIRGIN
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Pykmo"
+        shown_token: SPY
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Viessa"
+        shown_token: EMPATH
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Hagmer"
+        shown_token: FORTUNE_TELLER
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Axylia"
+        shown_token: IMP
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Pykmo"
+        role_action {
+            spy_info {
+                player_role {
+                    player: "Alke"
+                    role: VIRGIN
+                }
+                player_role {
+                    player: "Pykmo"
+                    role: SPY
+                }
+                player_role {
+                    player: "Viessa"
+                    role: EMPATH
+                    token: FORTUNE_TELLER_RED_HERRING
+                }
+                player_role {
+                    player: "Hagmer"
+                    role: FORTUNE_TELLER
+                }
+                player_role {
+                    player: "Axylia"
+                    role: IMP
+                }
+            }
+        }
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Viessa"
+        role_action {
+            # Spy registers as Good.
+            empath_info: 0
+        }
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Hagmer"
+        role_action {
+            fortuneteller_action {
+                pick1: "Axylia"
+                pick2: "Viessa"
+                yes: true
+            }
+        }
+    }
+}
+events {
+    day: 1
+}
+# All players hardclaim round-robin, starting from Alke.
+events {
+    claim {
+        player: "Alke"
+        role: VIRGIN
+    }
+}
+# Pykmo claims Butler, letting their demon know to bluff outsider.
+events {
+    claim {
+        player: "Pykmo"
+        role: BUTLER
+        info {
+            butler_action: "Alke"
+        }
+    }
+}
+events {
+    claim {
+        player: "Viessa"
+        role: EMPATH
+        info {
+            empath_info: 0
+        }
+    }
+}
+events {
+    claim {
+        player: "Hagmer"
+        role: FORTUNE_TELLER
+        info {
+            fortuneteller_action {
+                pick1: "Axylia"
+                pick2: "Viessa"
+                yes: true
+            }
+        }
+    }
+}
+events {
+    claim {
+        player: "Axylia"
+        role: SAINT
+    }
+}
+# It only makes sense for Viessa or Hagmer to nominate Alke.
+events {
+    nomination {
+        nominator: "Viessa"
+        nominee: "Alke"
+    }
+}
+events {
+    # Virgin proc.
+    execution: "Viessa"
+}
+events {
+    death: "Viessa"
+}
+events {
+    night: 2
+}
+events {
+    storyteller_interaction {
+        player: "Axylia"
+        role_action {
+            imp_action: "Alke"
+        }
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Hagmer"
+        role_action {
+            fortuneteller_action {
+                pick1: "Axylia"
+                pick2: "Pykmo"
+                yes: true
+            }
+        }
+    }
+}
+events {
+    storyteller_interaction {
+        player: "Pykmo"
+        role_action {
+            spy_info {
+                player_role {
+                    player: "Alke"
+                    role: VIRGIN
+                    token: SPENT_VIRGIN
+                    token: IMP_DEAD
+                }
+                player_role {
+                    player: "Pykmo"
+                    role: SPY
+                }
+                player_role {
+                    player: "Viessa"
+                    role: EMPATH
+                    token: FORTUNE_TELLER_RED_HERRING
+                }
+                player_role {
+                    player: "Hagmer"
+                    role: FORTUNE_TELLER
+                }
+                player_role {
+                    player: "Axylia"
+                    role: IMP
+                }
+            }
+        }
+    }
+}
+events {
+    day: 2
+}
+# Storyteller announces that Alke died in the night.
+events {
+    death: "Alke"
+}
+# Pykmo claims Alke is still their master.
+events {
+    claim {
+        player: "Pykmo"
+        role: BUTLER
+        info {
+            butler_action: "Alke"
+        }
+    }
+}
+events {
+    claim {
+        player: "Hagmer"
+        role: FORTUNE_TELLER
+        info {
+            fortuneteller_action {
+                pick1: "Axylia"
+                pick2: "Pykmo"
+                yes: true
+            }
+        }
+    }
+}
+# And now it is the final 3 with Axylia, Pykmo and Hagmer.
