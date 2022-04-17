@@ -1,8 +1,6 @@
 syntax = "proto3";
 
 package botc;
-option java_package = "com.botc.game";
-option java_outer_classname = "GameLogProto";
 
 enum Role {
     ROLE_UNSPECIFIED = 0;
