@@ -4,10 +4,14 @@
 #include <string>
 #include <vector>
 
+#include "ortools/constraint_solver/constraint_solver.h"
 #include "src/game_log.pb.h"
 
 namespace botc {
 
+using operations_research::Constraint;
+using operations_research::IntVar;
+using operations_research::Solver;
 using std::string;
 using std::vector;
 
@@ -18,12 +22,18 @@ public:
     explicit GameState(const GameLog& game_log);
 
     void AddEvent(const Event& event);
-    void RemoveLastEvent();
 
     GameLog ToProto() const;
 private:
+    void InitRoleVarsConstraints();
+
     Perspective perspective_;
     vector<string> players_;
+    int num_players_, num_outsiders_, num_townsfolk_, num_minions_;
+    vector<Event> events_;
+    vector<vector<Constraint*>> constraints_;
+    Solver solver_;
+    vector<vector<IntVar*>> player_role_vars_;
 };
 
 }  // namespace botc
