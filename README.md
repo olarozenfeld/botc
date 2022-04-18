@@ -8,7 +8,7 @@ TBD
 
 ## Development
 
-We use [Bazel](https://bazel.build) 4.0 or higher.
+We use [Bazel](https://bazel.build) version 4.0 or higher.
 
 You must compile using C++20:
 
