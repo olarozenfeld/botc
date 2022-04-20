@@ -11,12 +11,12 @@ cc_proto_library(
 )
 
 cc_library(
-    name = "game",
+    name = "game_lib",
     srcs = ["game.cc"],
     deps = [
         ":game_log_cc_proto",
         "@com_google_ortools//ortools/base",
-        "@com_google_ortools//ortools/constraint_solver:cp",
+        "@com_google_ortools//ortools/sat:cp_model",
     ],
     hdrs = ["game.h"],
 )
@@ -24,11 +24,30 @@ cc_library(
 cc_test(
     name = "game_test",
     srcs = ["game_test.cc"],
-    deps = [":game"],
+    deps = [
+        ":game_lib",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
+    ],
 )
 
 cc_binary(
     name = "botc",
     srcs = ["botc_main.cc"],
-    deps = [":game"],
+    deps = [
+        ":game_lib",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_binary(
+    name = "ortools_example",
+    srcs = ["ortools_example.cc"],
+    deps = [
+        "@com_google_ortools//ortools/base",
+        "@com_google_ortools//ortools/sat:cp_model",
+        "@com_google_ortools//ortools/sat:cp_model_solver",
+        "@com_google_ortools//ortools/util:sorted_interval_list",
+        "@com_google_absl//absl/types:span",
+    ],
 )

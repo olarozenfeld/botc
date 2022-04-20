@@ -7,9 +7,7 @@ setup {
     players: "Tanila"
     players: "Ivaran"
     players: "Jaonos"
-    # Actually has 2 outsiders because of Baron.
-    num_outsiders: 0
-    num_minions: 1
+    # Actually has 2 outsiders instead of 0 because of Baron.
     player_roles {
         player: "Neldor"
         role: LIBRARIAN

@@ -6,8 +6,6 @@ setup {
     players: "Hagmer"
     players: "Axylia"
     # Teensy-ville, no minion or demon info.
-    num_outsiders: 0
-    num_minions: 1
     player_roles {
         player: "Alke"
         role: VIRGIN

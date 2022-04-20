@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 syntax = "proto3";
 
 package botc;
@@ -51,10 +63,7 @@ message Setup {
     // chosen game description format.
     repeated string players = 1;
 
-    // The correct numbers for the current player count *before* any roles
-    // modifications.
-    int32 num_outsiders = 2;
-    int32 num_minions = 3; // There is always 1 demon. The rest are townsfolk.
+    // The outsider/minion counts can be inferred from the number of players.
     // TODO: Support travelers.
 
     // The actual roles assigned by the Storyteller. Only visible in the ST
@@ -63,10 +72,10 @@ message Setup {
         string player = 1;
         Role role = 2;
     }
-    repeated PlayerRole player_roles = 4;
+    repeated PlayerRole player_roles = 2;
 
     // Special startup fields for particular roles.
-    string red_herring = 5; // The Fortune Teller's red herring.
+    string red_herring = 3; // The Fortune Teller's red herring.
 }
 
 // Generalizes the TB top-3 info roles that get two pings and a role.

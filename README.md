@@ -35,3 +35,9 @@ You may run tests using:
   ```sh
   bazel test --cxxopt="-std:c++20" //...:all
   ```
+
+We use the [Google C++ style guide](https://google.github.io/styleguide/cppguide.html). To check style guide complicance, we use [cpplint]():
+
+```
+cpplint src/*.h src/*.cc
+```
