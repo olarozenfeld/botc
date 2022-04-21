@@ -50,9 +50,10 @@ class GameState {
   const CpModelBuilder& Model() const { return model_; }  // for debugging
 
  private:
-  void SetupRoleVars();
+  void InitRoleVars();
   void AddNextRoleVars();
-  void SetupHelperVars();
+  void InitHelperVars();
+  void InitRedHerring(const string& name);
 
   Perspective perspective_;
   vector<string> players_;

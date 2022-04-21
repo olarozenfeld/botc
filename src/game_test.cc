@@ -34,7 +34,7 @@ GameLog FromRoles(absl::Span<const Role> roles) {
 }
 
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
-  GameState g(FromRoles({IMP, FORTUNE_TELLER, SPY, EMPATH, VIRGIN}));
+  GameState g(FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN}));
   EXPECT_TRUE(g.IsValid());
 }
 
@@ -45,19 +45,19 @@ TEST(ValidateSTRoleSetup, Valid5PlayersBaron) {
 
 TEST(ValidateSTRoleSetup, Valid6PlayersNoBaron) {
   GameState g(FromRoles(
-    {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP}));
+    {DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP}));
   EXPECT_TRUE(g.IsValid());
 }
 
 TEST(ValidateSTRoleSetup, Valid6PlayersBaron) {
   GameState g(FromRoles(
-    {DRUNK, RECLUSE, FORTUNE_TELLER, BARON, SAINT, IMP}));
+    {DRUNK, RECLUSE, MONK, BARON, SAINT, IMP}));
   EXPECT_TRUE(g.IsValid());
 }
 
 TEST(ValidateSTRoleSetup, Valid9PlayersNoBaron) {
-  GameState g(FromRoles({DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH,
-                         IMP, SAINT, WASHERWOMAN, CHEF}));
+  GameState g(FromRoles({DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP, SAINT,
+                         WASHERWOMAN, CHEF}));
   EXPECT_TRUE(g.IsValid());
 }
 
@@ -69,18 +69,18 @@ TEST(ValidateSTRoleSetup, Valid9PlayersBaron) {
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoImp) {
   GameState g(FromRoles(
-    {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, CHEF}));
+    {DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, CHEF}));
   EXPECT_FALSE(g.IsValid());
 }
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoMinion) {
-  GameState g(FromRoles({DRUNK, SLAYER, FORTUNE_TELLER, CHEF, EMPATH, IMP}));
+  GameState g(FromRoles({DRUNK, SLAYER, MONK, CHEF, EMPATH, IMP}));
   EXPECT_FALSE(g.IsValid());
 }
 
 TEST(ValidateSTRoleSetup, Invalid13PlayersTwoMinions) {
   GameState g(FromRoles(
-    {VIRGIN, SLAYER, FORTUNE_TELLER, CHEF, EMPATH, IMP, SPY, SCARLET_WOMAN,
+    {VIRGIN, SLAYER, MONK, CHEF, EMPATH, IMP, SPY, SCARLET_WOMAN,
      INVESTIGATOR, WASHERWOMAN, MAYOR, UNDERTAKER, SOLDIER}));
   EXPECT_FALSE(g.IsValid());
 }

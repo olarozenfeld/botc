@@ -47,14 +47,11 @@ GameState::GameState(Perspective perspective, const Setup& setup)
     CHECK_EQ(setup.player_roles_size(), num_players_) <<
         "Expected fully assigned player roles in storyteller perspective";
   } else {
-    // Check we don't have unexpected info. If we do, it is not necessarily a
-    // mistake, but most likely is one.
-    if (setup.player_roles_size() > 0) {
-        LOG(WARNING) << "Player roles assigned in non-storyteller perspective.";
-    }
-    if (!setup.red_herring().empty()) {
-        LOG(WARNING) << "Red-herring info in non-storyteller perspective.";
-    }
+    // Check we don't have unexpected info.
+    CHECK_EQ(setup.player_roles_size(), 0)
+        << "Player roles assigned in non-storyteller perspective.";
+    CHECK(setup.red_herring().empty())
+        << "Red-herring info in non-storyteller perspective.";
   }
   for (const auto& player_role : setup.player_roles()) {
     const string& name = player_role.player();
@@ -65,19 +62,30 @@ GameState::GameState(Perspective perspective, const Setup& setup)
     player_roles_[it->second] = player_role.role();
   }
 
+  InitRoleVars();
+  InitHelperVars();
+  InitRedHerring(setup.red_herring());
+}
+
+void GameState::InitRedHerring(const string& name) {
+  bool have_fortune_teller = false;
+  for (Role role : player_roles_) {
+    if (role == FORTUNE_TELLER) {
+      have_fortune_teller = true;
+    }
+  }
+  CHECK(name.empty() == !have_fortune_teller)
+      << "Fortune teller red herring should be specified if and only if a "
+      << "Fortune Teller is in play.";
   red_herring_ = kNoPlayer;
-  if (!setup.red_herring().empty()) {
-    const string& name = setup.red_herring();
+  if (have_fortune_teller) {
     const auto it = player_index_.find(name);
     CHECK(it != player_index_.end()) << "Invalid red herring player: " << name;
     red_herring_ = it->second;
   }
-
-  SetupRoleVars();
-  SetupHelperVars();
 }
 
-void GameState::SetupRoleVars() {
+void GameState::InitRoleVars() {
     // night1_roles[i][role] is true iff player players_[i] has role+1.
     vector<vector<BoolVar>> night1_roles(num_players_);
     for (int i = 0; i < num_players_; ++i) {
@@ -164,7 +172,7 @@ void GameState::SetupRoleVars() {
     player_roles_night_.push_back(night1_roles);
 }
 
-void GameState::SetupHelperVars() {
+void GameState::InitHelperVars() {
     // A Player is Evil iff they have an Evil role on Night 1 (in TB).
     const vector<vector<BoolVar>>& night1_roles = player_roles_night_[0];
     for (int i = 0; i < num_players_; ++i) {
