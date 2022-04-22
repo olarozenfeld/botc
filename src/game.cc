@@ -517,7 +517,8 @@ void GameState::AddEvilWonConstraints() {
   const auto& day_roles = day_roles_[day_roles_.size() - 1];
   if (execution_ != kNoPlayer) {
     const string name = absl::StrFormat(
-        "Evil wins on execution of %s -> Saint was executed", players_[execution_]);
+        "Evil wins on execution of %s -> Saint was executed",
+        players_[execution_]);
     model_.AddEquality(day_roles[execution_][SAINT], model_.TrueVar())
           .WithName(name);
     return;
