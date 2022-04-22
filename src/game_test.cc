@@ -90,6 +90,22 @@ TEST(ValidateSTRoleSetup, Invalid5PlayersRoleRepeat) {
   EXPECT_FALSE(g.IsValid());
 }
 
+TEST(ValidateSTRoleSetup, ValidFortuneTellerRedHerring) {
+  GameLog log = FromRoles(
+      {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP});
+  log.mutable_setup()->set_red_herring("P1");
+  GameState g(log);
+  EXPECT_TRUE(g.IsValid());
+}
+
+TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
+  GameLog log = FromRoles(
+      {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP});
+  log.mutable_setup()->set_red_herring("P3");  // The SW can't be a red herring.
+  GameState g(log);
+  EXPECT_FALSE(g.IsValid());
+}
+
 }  // namespace
 }  // namespace botc
 

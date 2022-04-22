@@ -38,7 +38,7 @@ GameLog CreateGameLog() {
   pr->set_role(IMP);
   pr = setup->add_player_roles();
   pr->set_player("b");
-  pr->set_role(FORTUNE_TELLER);
+  pr->set_role(MONK);
   pr = setup->add_player_roles();
   pr->set_player("c");
   pr->set_role(SPY);
