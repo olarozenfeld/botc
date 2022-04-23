@@ -1,3 +1,4 @@
+// Copyright 2022 Ola Rozenfeld
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,191 +16,195 @@ syntax = "proto3";
 package botc;
 
 enum Role {
-    ROLE_UNSPECIFIED = 0;
-    // Trouble Brewing roles
-    // Townsfolk
-    WASHERWOMAN = 1;
-    LIBRARIAN = 2;
-    INVESTIGATOR = 3;
-    CHEF = 4;
-    EMPATH = 5;
-    FORTUNE_TELLER = 6;
-    UNDERTAKER = 7;
-    MONK = 8;
-    RAVENKEEPER = 9;
-    VIRGIN = 10;
-    SLAYER = 11;
-    SOLDIER = 12;
-    MAYOR = 13;
-    // Outsiders
-    BUTLER = 14;
-    DRUNK = 15;
-    RECLUSE = 16;
-    SAINT = 17;
-    // Minions
-    POISONER = 18;
-    SPY = 19;
-    SCARLET_WOMAN = 20;
-    BARON = 21;
-    // Demons
-    IMP = 22;
+  ROLE_UNSPECIFIED = 0;
+  // Trouble Brewing roles
+  // Townsfolk
+  WASHERWOMAN = 1;
+  LIBRARIAN = 2;
+  INVESTIGATOR = 3;
+  CHEF = 4;
+  EMPATH = 5;
+  FORTUNE_TELLER = 6;
+  UNDERTAKER = 7;
+  MONK = 8;
+  RAVENKEEPER = 9;
+  VIRGIN = 10;
+  SLAYER = 11;
+  SOLDIER = 12;
+  MAYOR = 13;
+  // Outsiders
+  BUTLER = 14;
+  DRUNK = 15;
+  RECLUSE = 16;
+  SAINT = 17;
+  // Minions
+  POISONER = 18;
+  SPY = 19;
+  SCARLET_WOMAN = 20;
+  BARON = 21;
+  // Demons
+  IMP = 22;
 }
 
 // Each game is seen from a given perspective.
 enum Perspective {
-    PERSPECTIVE_UNSPECIFIED = 0;
-    STORYTELLER = 1; // Contains the full info.
-    PLAYER = 2; // Contains the full info available to a particular player.
-    OBSERVER = 3; // Contains only public info.
+  PERSPECTIVE_UNSPECIFIED = 0;
+  STORYTELLER = 1; // Contains the full info.
+  PLAYER = 2; // Contains the full info available to a particular player.
+  OBSERVER = 3; // Contains only public info.
 }
 
 // The setup contains all the grimoire tokens that the storyteller must assign
 // when creating the game, before start. In player and observer perspectives,
 // it will only contain public information.
 message Setup {
-    // The player circle, in order.
-    // We use strings for player names, because we're optimizing for
-    // readability of the text protos over everything else, since this is our
-    // chosen game description format.
-    repeated string players = 1;
+  // The player circle, in order.
+  // We use strings for player names, because we're optimizing for
+  // readability of the text protos over everything else, since this is our
+  // chosen game description format.
+  repeated string players = 1;
 
-    // The outsider/minion counts can be inferred from the number of players.
-    // TODO: Support travelers.
+  // The outsider/minion counts can be inferred from the number of players.
+  // TODO: Support travelers.
 
-    // The actual roles assigned by the Storyteller. Only visible in the ST
-    // perspective. E.g. the Drunk will appear here as DRUNK.
-    message PlayerRole {
-        string player = 1;
-        Role role = 2;
-    }
-    repeated PlayerRole player_roles = 2;
+  // The actual roles assigned by the Storyteller. Only visible in the ST
+  // perspective. E.g. the Drunk will appear here as DRUNK.
+  message PlayerRole {
+    string player = 1;
+    Role role = 2;
+  }
+  repeated PlayerRole player_roles = 2;
 
-    // Special startup fields for particular roles.
-    string red_herring = 3; // The Fortune Teller's red herring.
+  // Special startup fields for particular roles.
+  string red_herring = 3; // The Fortune Teller's red herring.
 }
 
 // Generalizes the TB top-3 info roles that get two pings and a role.
 message LearnRoleInfo {
-    string ping1 = 1;
-    string ping2 = 2;
-    Role role = 3;
+  string ping1 = 1;
+  string ping2 = 2;
+  Role role = 3;
 }
 
 message FortuneTellerAction {
-    string pick1 = 1;
-    string pick2 = 2;
-    bool yes = 3;
+  string pick1 = 1;
+  string pick2 = 2;
+  bool yes = 3;
 }
 
 message RavenkeeperInfo {
-    string pick = 1;
-    Role role = 2;
+  string pick = 1;
+  Role role = 2;
 }
 
 // The Spy info is player roles plus tokens.
 enum Token {
-    TOKEN_UNSPECIFIED = 0;
-    IS_DRUNK = 1;
-    POISONED = 2;
-    SPENT_VIRGIN = 3;
-    SPENT_SLAYER = 4;
-    BUTLER_MASTER = 5;
-    IMP_DEAD = 6;
-    LIBRARIAN_OUTSIDER = 7;
-    LIBRARIAN_WRONG = 8;
-    INVESTIGATOR_MINION = 9;
-    INVESTIGATOR_WRONG = 10;
-    WASHERWOMAN_TOWNSFOLK = 11;
-    WASHERWOMAN_WRONG = 12;
-    FORTUNE_TELLER_RED_HERRING = 13;
-    // For travelers, add GOOD and EVIL.
+  TOKEN_UNSPECIFIED = 0;
+  IS_DRUNK = 1;
+  POISONED = 2;
+  SPENT_VIRGIN = 3;
+  SPENT_SLAYER = 4;
+  BUTLER_MASTER = 5;
+  IMP_DEAD = 6;
+  LIBRARIAN_OUTSIDER = 7;
+  LIBRARIAN_WRONG = 8;
+  INVESTIGATOR_MINION = 9;
+  INVESTIGATOR_WRONG = 10;
+  WASHERWOMAN_TOWNSFOLK = 11;
+  WASHERWOMAN_WRONG = 12;
+  FORTUNE_TELLER_RED_HERRING = 13;
+  // For travelers, add GOOD and EVIL.
 }
 
 message SpyInfo {
-    message PlayerSpyInfo {
-        string player = 1;
-        Role role = 2;
-        repeated Token token = 3;
-    }
-    repeated PlayerSpyInfo player_info = 1;
+  message PlayerSpyInfo {
+    string player = 1;
+    Role role = 2;
+    repeated Token token = 3;
+  }
+  repeated PlayerSpyInfo player_info = 1;
 }
 
 message RoleAction {
-    oneof details {
-        LearnRoleInfo washerwoman_info = 6;
-        LearnRoleInfo librarian_info = 7;
-        LearnRoleInfo investigator_info = 8;
-        int32 chef_info = 9;
-        int32 empath_info = 10;
-        FortuneTellerAction fortuneteller_action = 11;
-        string monk_action = 12;
-        string butler_action = 13;
-        RavenkeeperInfo ravenkeeper_info = 14;
-        Role undertaker_info = 15;
-        string slayer_action = 16;
-        string poisoner_action = 17;
-        string imp_action = 18;
-        SpyInfo spy_info = 19;
-    }
+  oneof details {
+    LearnRoleInfo washerwoman_info = 6;
+    LearnRoleInfo librarian_info = 7;
+    LearnRoleInfo investigator_info = 8;
+    int32 chef_info = 9;
+    int32 empath_info = 10;
+    FortuneTellerAction fortuneteller_action = 11;
+    string monk_action = 12;
+    string butler_action = 13;
+    RavenkeeperInfo ravenkeeper_info = 14;
+    Role undertaker_info = 15;
+    string slayer_action = 16;
+    string poisoner_action = 17;
+    string imp_action = 18;
+    SpyInfo spy_info = 19;
+  }
 }
 
 // The claims are the public information of player roles. They do not
 // necessarily correspond to actual roles (people lie!)
 message Claim {
-    string player = 1;
-    Role role = 2;
-    // The info relates to the last storyteller interaction.
-    RoleAction info = 3;
+  string player = 1;
+  Role role = 2;
+  // The info relates to the last storyteller interaction.
+  RoleAction info = 3;
 }
 
 message MinionInfo {
-    string demon = 1;
-    repeated string minions = 2;
+  string demon = 1;
+  repeated string minions = 2;
 }
 
 message DemonInfo {
-    repeated string minions = 1;
-    repeated Role bluffs = 2;
+  repeated string minions = 1;
+  repeated Role bluffs = 2;
 }
 
 // These events will only appear in the ST perspective of the game. They are
 // what actually happened, as opposed to claims.
 message StorytellerInteraction {
-    string player = 1;
-    oneof details {
-        Role shown_token = 2;
-        MinionInfo minion_info = 3;
-        DemonInfo demon_info = 4;
-        RoleAction role_action = 5;
-    }
+  string player = 1;
+  oneof details {
+    Role shown_token = 2;
+    MinionInfo minion_info = 3;
+    DemonInfo demon_info = 4;
+    RoleAction role_action = 5;
+  }
 }
 
 message Nomination {
-    string nominator = 1;
-    string nominee = 2;
+  string nominator = 1;
+  string nominee = 2;
+}
+
+message Vote {
+  repeated string votes = 1;  // Who raised their hand, in order.
+  string on_the_block = 2;  // Who ends up on the block as a result.
 }
 
 enum Team {
-    TEAM_UNSPECIFIED = 0;
-    GOOD = 1;
-    EVIL = 2;
+  TEAM_UNSPECIFIED = 0;
+  GOOD = 1;
+  EVIL = 2;
 }
-
-// Currently, no need for recording the vote results, or who is on the block.
 
 // The game is an ordered stream of events.
 message Event {
-    oneof details {
-        int32 day = 1; // Start of day.
-        int32 night = 2; // Start of night.
-        StorytellerInteraction storyteller_interaction = 3;
-        Nomination nomination = 4;
-        string execution = 5;
-        string death = 6; // Sotryteller announces that the player is dead.
-        // (Night deaths become public info on start of next day).
-        Claim claim = 7;
-        Team victory = 8; // Game end. Must be the last event, if present.
-    }
+  oneof details {
+    int32 day = 1; // Start of day.
+    int32 night = 2; // Start of night.
+    StorytellerInteraction storyteller_interaction = 3;
+    Nomination nomination = 4;
+    Vote vote = 5;
+    string execution = 6;
+    string death = 7; // Storyteller announces that the player is dead.
+    // (Night deaths become public info on start of next day).
+    Claim claim = 8;
+    Team victory = 9; // Game end. Must be the last event, if present.
+  }
 }
 
 message GameLog {

@@ -1,315 +1,325 @@
 perspective: STORYTELLER
 setup {
-    players: "Eletha"
-    players: "Alwyn"
-    players: "Goren"
-    players: "Fernia"
-    players: "Merethyl"
-    players: "Shamyrra"
-    players: "Sylvar"
-    player_roles {
-        player: "Eletha"
-        role: WASHERWOMAN
+  players: "Eletha"
+  players: "Alwyn"
+  players: "Goren"
+  players: "Fernia"
+  players: "Merethyl"
+  players: "Shamyrra"
+  players: "Sylvar"
+  player_roles {
+    player: "Eletha"
+    role: WASHERWOMAN
+  }
+  player_roles {
+    player: "Alwyn"
+    role: POISONER
+  }
+  player_roles {
+    player: "Goren"
+    role: INVESTIGATOR
+  }
+  player_roles {
+    player: "Fernia"
+    role: SLAYER
+  }
+  player_roles {
+    player: "Merethyl"
+    role: FORTUNE_TELLER
+  }
+  player_roles {
+    player: "Shamyrra"
+    role: IMP
+  }
+  player_roles {
+    player: "Sylvar"
+    role: VIRGIN
+  }
+  red_herring: "Fernia"
+}
+events {
+  night: 1
+}
+events {
+  storyteller_interaction {
+    player: "Eletha"
+    shown_token: WASHERWOMAN
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Alwyn"
+    shown_token: POISONER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Goren"
+    shown_token: INVESTIGATOR
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Fernia"
+    shown_token: SLAYER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Merethyl"
+    shown_token: FORTUNE_TELLER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Shamyrra"
+    shown_token: IMP
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Sylvar"
+    shown_token: VIRGIN
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Alwyn"
+    minion_info {
+      demon: "Shamyrra"
     }
-    player_roles {
-        player: "Alwyn"
-        role: POISONER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Shamyrra"
+    demon_info {
+      minions: "Alwyn"
+      bluffs: MAYOR
+      bluffs: RAVENKEEPER
+      bluffs: MONK
     }
-    player_roles {
-        player: "Goren"
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Alwyn"
+    role_action {
+      poisoner_action: "Goren"
+    }
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Eletha"
+    role_action {
+      washerwoman_info {
+        ping1: "Alwyn"
+        ping2: "Goren"
         role: INVESTIGATOR
+      }
     }
-    player_roles {
-        player: "Fernia"
-        role: SLAYER
-    }
-    player_roles {
-        player: "Merethyl"
-        role: FORTUNE_TELLER
-    }
-    player_roles {
-        player: "Shamyrra"
-        role: IMP
-    }
-    player_roles {
-        player: "Sylvar"
-        role: VIRGIN
-    }
-    red_herring: "Fernia"
+  }
 }
 events {
-    night: 1
-}
-events {
-    storyteller_interaction {
-        player: "Eletha"
-        shown_token: WASHERWOMAN
+  storyteller_interaction {
+    player: "Goren"
+    role_action {
+      # Wrong because Goren is poisoned by Alwyn.
+      investigator_info {
+        ping1: "Sylvar"
+        ping2: "Merethyl"
+        role: SCARLET_WOMAN
+      }
     }
+  }
 }
 events {
-    storyteller_interaction {
-        player: "Alwyn"
-        shown_token: POISONER
+  storyteller_interaction {
+    player: "Merethyl"
+    role_action {
+      fortuneteller_action {
+        pick1: "Fernia"
+        pick2: "Eletha"
+        # Because Fernia is the red herring.
+        yes: true
+      }
     }
+  }
 }
 events {
-    storyteller_interaction {
-        player: "Goren"
-        shown_token: INVESTIGATOR
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Fernia"
-        shown_token: SLAYER
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Merethyl"
-        shown_token: FORTUNE_TELLER
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Shamyrra"
-        shown_token: IMP
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Sylvar"
-        shown_token: VIRGIN
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Alwyn"
-        minion_info {
-            demon: "Shamyrra"
-        }
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Shamyrra"
-        demon_info {
-            minions: "Alwyn"
-            bluffs: MAYOR
-            bluffs: RAVENKEEPER
-            bluffs: MONK
-        }
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Alwyn"
-        role_action {
-            poisoner_action: "Goren"
-        }
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Eletha"
-        role_action {
-            washerwoman_info {
-                ping1: "Alwyn"
-                ping2: "Goren"
-                role: INVESTIGATOR
-            }
-        }
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Goren"
-        role_action {
-            # Wrong because Goren is poisoned by Alwyn.
-            investigator_info {
-                ping1: "Sylvar"
-                ping2: "Merethyl"
-                role: SCARLET_WOMAN
-            }
-        }
-    }
-}
-events {
-    storyteller_interaction {
-        player: "Merethyl"
-        role_action {
-            fortuneteller_action {
-                pick1: "Fernia"
-                pick2: "Eletha"
-                # Because Fernia is the red herring.
-                yes: true
-            }
-        }
-    }
-}
-events {
-    day: 1
+  day: 1
 }
 # All players hardclaim round-robin, starting from Goren.
 events {
-    claim {
-        player: "Goren"
+  claim {
+    player: "Goren"
+    role: INVESTIGATOR
+    info {
+      investigator_info {
+        ping1: "Sylvar"
+        ping2: "Merethyl"
+        role: SCARLET_WOMAN
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Fernia"
+    role: SLAYER
+  }
+}
+events {
+  claim {
+    player: "Merethyl"
+    role: FORTUNE_TELLER
+    info {
+      fortuneteller_action {
+        pick1: "Fernia"
+        pick2: "Eletha"
+        yes: true
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Shamyrra"
+    role: MAYOR
+  }
+}
+events {
+  claim {
+    player: "Sylvar"
+    role: VIRGIN
+  }
+}
+events {
+  claim {
+    player: "Eletha"
+    role: WASHERWOMAN
+    info {
+      washerwoman_info {
+        ping1: "Alwyn"
+        ping2: "Goren"
         role: INVESTIGATOR
-        info {
-            investigator_info {
-                ping1: "Sylvar"
-                ping2: "Merethyl"
-                role: SCARLET_WOMAN
-            }
-        }
+      }
     }
+  }
 }
 events {
-    claim {
-        player: "Fernia"
-        role: SLAYER
-    }
-}
-events {
-    claim {
-        player: "Merethyl"
-        role: FORTUNE_TELLER
-        info {
-            fortuneteller_action {
-                pick1: "Fernia"
-                pick2: "Eletha"
-                yes: true
-            }
-        }
-    }
-}
-events {
-    claim {
-        player: "Shamyrra"
-        role: MAYOR
-    }
-}
-events {
-    claim {
-        player: "Sylvar"
-        role: VIRGIN
-    }
-}
-events {
-    claim {
-        player: "Eletha"
-        role: WASHERWOMAN
-        info {
-            washerwoman_info {
-                ping1: "Alwyn"
-                ping2: "Goren"
-                role: INVESTIGATOR
-            }
-        }
-    }
-}
-events {
-    claim {
-        player: "Alwyn"
-        role: MONK
-    }
+  claim {
+    player: "Alwyn"
+    role: MONK
+  }
 }
 # Fernia claims Slayer and shoots Meterhyl (public info).
 events {
-    claim {
-        player: "Fernia"
-        info {
-            slayer_action: "Merethyl"
-        }
+  claim {
+    player: "Fernia"
+    info {
+      slayer_action: "Merethyl"
     }
+  }
 }
 # The storyteller marks Fernia's ability as spent.
 events {
-    storyteller_interaction {
-        player: "Fernia"
-        role_action {
-            slayer_action: "Merethyl"
-        }
+  storyteller_interaction {
+    player: "Fernia"
+    role_action {
+      slayer_action: "Merethyl"
     }
+  }
 }
 events {
-    nomination {
-        nominator: "Goren"
-        nominee: "Sylvar"
+  nomination {
+    nominator: "Goren"
+    nominee: "Sylvar"
+  }
+}
+events {
+  # Virgin proc.
+  execution: "Goren"
+}
+events {
+  death: "Goren"
+}
+events {
+  night: 2
+}
+events {
+  storyteller_interaction {
+    player: "Alwyn"
+    role_action {
+      poisoner_action: "Merethyl"
     }
+  }
 }
 events {
-    # Virgin proc.
-    execution: "Goren"
-}
-events {
-    death: "Goren"
-}
-events {
-    night: 2
-}
-events {
-    storyteller_interaction {
-        player: "Alwyn"
-        role_action {
-            poisoner_action: "Merethyl"
-        }
+  storyteller_interaction {
+    player: "Shamyrra"
+    role_action {
+      imp_action: "Merethyl"
     }
+  }
 }
 events {
-    storyteller_interaction {
-        player: "Shamyrra"
-        role_action {
-            imp_action: "Merethyl"
-        }
-    }
-}
-events {
-    day: 2
+  day: 2
 }
 # Storyteller announces that Merethyl died in the night.
 events {
-    death: "Merethyl"
+  death: "Merethyl"
 }
 # Alwyn claims he protected Merethyl last night.
 events {
-    claim {
-        player: "Alwyn"
-        info {
-            monk_action: "Merethyl"
-        }
+  claim {
+    player: "Alwyn"
+    info {
+      monk_action: "Merethyl"
     }
+  }
 }
 # Unsurprisingly, Alwyn is nominated.
 events {
-    nomination {
-        nominator: "Sylvar"
-        nominee: "Alwyn"
-    }
+  nomination {
+    nominator: "Sylvar"
+    nominee: "Alwyn"
+  }
 }
 events {
-    execution: "Alwyn"
+  vote {
+    votes: "Fernia"
+    votes: "Shamyrra"
+    votes: "Sylvar"
+    votes: "Eletha"
+    votes: "Alwyn"
+    on_the_block: "Alwyn"
+  }
 }
 events {
-    death: "Alwyn"
+  execution: "Alwyn"
 }
 events {
-    night: 3
+  death: "Alwyn"
+}
+events {
+  night: 3
 }
 # Shamyrra kills the proc-ed Virgin.
 events {
-    storyteller_interaction {
-        player: "Shamyrra"
-        role_action {
-            imp_action: "Sylvar"
-        }
+  storyteller_interaction {
+    player: "Shamyrra"
+    role_action {
+      imp_action: "Sylvar"
     }
+  }
 }
 events {
-    day: 3
+  day: 3
 }
 # Storyteller announces that Sylvar has died in the night.
 events {
-    death: "Sylvar"
+  death: "Sylvar"
 }
 # And now it is the final 3 with Eletha, Shamyrra and Fernia.

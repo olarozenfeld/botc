@@ -30,11 +30,17 @@ using std::string;
 using std::vector;
 using std::unordered_map;
 
+namespace internal {
 // In-game current time.
 struct Time {
   bool IsDay = false;
   int Count = 0;
 };
+
+struct Nomination {
+  int Nominator, Nominee;
+};
+}  // namespace internal
 
 // This contains an instance of a BOTC game on a particular time.
 class GameState {
@@ -54,8 +60,9 @@ class GameState {
   void InitRedHerring(const string& name);
   void AddDay(int count);
   void AddNight(int count);
-  void AddStoryTellerInteraction(const StorytellerInteraction& interaction);
+  void AddStorytellerInteraction(const StorytellerInteraction& interaction);
   void AddNomination(const Nomination& nomination);
+  void AddVote(const Vote& vote);
   void AddExecution(const string& name);
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
@@ -65,6 +72,15 @@ class GameState {
   void AddEvilWonConstraints();
   void InitNextNightRoleVars();
   void InitNextNightHelperVars();
+
+  // Syntactic-sugar-type helper functions.
+  vector<BoolVar> CollectRoles(const vector<vector<BoolVar>>& from,
+                               absl::Span<const Role> roles,
+                               bool only_alive) const;
+  vector<BoolVar> CollectRoles(const vector<vector<BoolVar>>& from,
+                               absl::Span<const Role> roles) const;
+  vector<BoolVar> CollectAliveRoles(const vector<vector<BoolVar>>& from,
+                                    absl::Span<const Role> roles) const;
   void PropagateRoles(const vector<vector<BoolVar>>& from,
                       const vector<vector<BoolVar>>& to,
                       absl::Span<const Role> roles,
@@ -80,11 +96,15 @@ class GameState {
   vector<string> players_;
   unordered_map<string, int> player_index_;
   int num_players_, num_outsiders_, num_minions_;
-  Time cur_time_;
+  internal::Time cur_time_;
   vector<bool> is_alive_;  // Is player currently alive.
   int num_alive_;
-  vector<Nomination> nominations_;  // Last day nominations.
-  int execution_;  // A player index (or kNoPlayer) for last executee.
+  vector<internal::Nomination> nominations_;  // Last day nominations.
+  int num_votes_;  // Votes on the last nomination.
+  int on_the_block_;  // A player index (or kNoPlayer) for the execution block.
+  int execution_;  // A player index (or kNoPlayer) for today's executee.
+  // Not the same to execution_, because executing dead players is valid.
+  int execution_death_;  // A player index for today's execution death.
   // In TB, executees always die, so we don't need to track deaths separately.
   int slayer_death_;  // A player index (or kNoPlayer) for Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.

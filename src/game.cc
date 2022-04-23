@@ -42,7 +42,8 @@ namespace {
 GameState::GameState(Perspective perspective, const Setup& setup)
     : perspective_(perspective), num_players_(setup.players_size()),
       is_alive_(num_players_, true), num_alive_(num_players_),
-      execution_(kNoPlayer), slayer_death_(kNoPlayer),
+      num_votes_(0), on_the_block_(kNoPlayer), execution_(kNoPlayer),
+      execution_death_(kNoPlayer), slayer_death_(kNoPlayer),
       night_death_(kNoPlayer), victory_(TEAM_UNSPECIFIED),
       st_player_roles_(num_players_), st_red_herring_(kNoPlayer),
       st_poisoner_pick_(kNoPlayer), st_imp_pick_(kNoPlayer) {
@@ -208,12 +209,7 @@ void GameState::InitRoleVars() {
 
 void GameState::AddBaronConstraints() {
   BoolVar baron_in_play = NewVarRoleInPlay(BARON);
-  vector<BoolVar> outsiders;
-  for (int i = 0; i < num_players_; ++i) {
-    for (int role : kOutsiderRoles) {
-      outsiders.push_back(night_roles_[0][i][role]);
-    }
-  }
+  vector<BoolVar> outsiders = CollectRoles(night_roles_[0], kOutsiderRoles);
   model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_)
       .OnlyEnforceIf(baron_in_play.Not())
       .WithName(
@@ -223,12 +219,7 @@ void GameState::AddBaronConstraints() {
       .WithName(
         absl::StrFormat("baron_in_play -> %d outsiders", num_outsiders_ + 2));
   int num_townsfolk = kNumTownsfolk[num_players_ - 5];
-  vector<BoolVar> townsfolk;
-  for (int i = 0; i < num_players_; ++i) {
-    for (int role : kTownsfolkRoles) {
-      townsfolk.push_back(night_roles_[0][i][role]);
-    }
-  }
+  vector<BoolVar> townsfolk = CollectRoles(night_roles_[0], kTownsfolkRoles);;
   model_.AddEquality(LinearExpr::Sum(townsfolk), num_townsfolk)
       .OnlyEnforceIf(baron_in_play.Not())
       .WithName(
@@ -255,6 +246,7 @@ void GameState::InitHelperVars() {
 }
 
 void GameState::AddEvent(const Event& event) {
+  CHECK_EQ(victory_, TEAM_UNSPECIFIED) << "No events allowed after victory";
   switch (event.details_case()) {
     case Event::kDay:
       AddDay(event.day());
@@ -263,10 +255,13 @@ void GameState::AddEvent(const Event& event) {
       AddNight(event.night());
       break;
     case Event::kStorytellerInteraction:
-      AddStoryTellerInteraction(event.storyteller_interaction());
+      AddStorytellerInteraction(event.storyteller_interaction());
       break;
     case Event::kNomination:
       AddNomination(event.nomination());
+      break;
+    case Event::kVote:
+      AddVote(event.vote());
       break;
     case Event::kExecution:
       AddExecution(event.execution());
@@ -304,9 +299,7 @@ void GameState::AddNight(int count) {
   InitNextNightRoleVars();
   InitNextNightHelperVars();
   AddGameNotOverConstraints();  // Everyone go to sleep -> game is continuing.
-}
-
-void GameState::AddGameNotOverConstraints() {
+  night_death_ = st_poisoner_pick_ = st_imp_pick_ = kNoPlayer;
 }
 
 // Assumption: called only on Night > 1.
@@ -333,6 +326,20 @@ void GameState::InitNextNightRoleVars() {
 }
 
 void GameState::InitNextNightHelperVars() {
+  vector<BoolVar> imp_picks;
+  for (int i = 0; i < num_players_; ++i) {
+    string name = absl::StrFormat("imp_picks_%s_night_%d", players_[i],
+                                  cur_time_.Count);
+    imp_picks.push_back(model_.NewBoolVar().WithName(name));
+  }
+  imp_pick_.push_back(imp_picks);
+  vector<BoolVar> poisoner_picks;
+  for (int i = 0; i < num_players_; ++i) {
+    string name = absl::StrFormat("poisoner_picks_%s_night_%d", players_[i],
+                                  cur_time_.Count);
+    poisoner_picks.push_back(model_.NewBoolVar().WithName(name));
+  }
+  poisoner_pick_.push_back(poisoner_picks);
 }
 
 void GameState::AddScarletWomanConstraints() {
@@ -354,7 +361,8 @@ void GameState::AddScarletWomanConstraints() {
       }
     }
     bool imp_died = (
-        (execution_ != kNoPlayer && st_player_roles_[execution_] == IMP) ||
+        (execution_death_ != kNoPlayer &&
+         st_player_roles_[execution_death_] == IMP) ||
         (slayer_death_ != kNoPlayer && st_player_roles_[slayer_death_] == IMP));
     if (num_alive_ >= 5 && imp_died && sw_player != kNoPlayer &&
         is_alive_[sw_player] && st_poisoner_pick_ != sw_player) {
@@ -371,13 +379,13 @@ void GameState::AddScarletWomanConstraints() {
   const string prev_day_name = absl::StrFormat("day_%d", cur_time_.Count - 1);
   const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
   if (num_alive_ < 5 ||
-      (execution_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
+      (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
     // Then we know for sure SW can't trigger.
     PropagateRoles(day_roles, night_roles, {SCARLET_WOMAN, IMP}, prev_day_name,
                    night_name);
     return;
   }
-  int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_;
+  int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
   BoolVar imp_died = day_roles[death][IMP];
   const auto& poisoner_pick = poisoner_pick_[poisoner_pick_.size() - 1];
   for (int i = 0; i < num_players_; ++i) {
@@ -414,6 +422,30 @@ void GameState::AddScarletWomanConstraints() {
   }
 }
 
+vector<BoolVar> GameState::CollectRoles(const vector<vector<BoolVar>>& from,
+                                        absl::Span<const Role> roles,
+                                        bool only_alive) const {
+  vector<BoolVar> result;
+  for (int i = 0; i < num_players_; ++i) {
+    if (!only_alive || is_alive_[i]) {
+      for (int role : roles) {
+        result.push_back(night_roles_[0][i][role]);
+      }
+    }
+  }
+  return result;
+}
+
+vector<BoolVar> GameState::CollectRoles(const vector<vector<BoolVar>>& from,
+                                        absl::Span<const Role> roles)  const {
+  return CollectRoles(from, roles, false);
+}
+
+vector<BoolVar> GameState::CollectAliveRoles(
+    const vector<vector<BoolVar>>& from, absl::Span<const Role> roles)  const {
+  return CollectRoles(from, roles, true);
+}
+
 void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
                                const vector<vector<BoolVar>>& to,
                                absl::Span<const Role> roles,
@@ -434,17 +466,60 @@ void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
   }
 }
 
-void GameState::AddStoryTellerInteraction(
-  const StorytellerInteraction& interaction) {
+void GameState::AddStorytellerInteraction(
+    const StorytellerInteraction& interaction) {
 }
 
 void GameState::AddNomination(const Nomination& nomination) {
+  CHECK(cur_time_.IsDay) << "Nominations can only occur during the day.";
+  auto it = player_index_.find(nomination.nominator());
+  CHECK(it != player_index_.end())
+      << "Invalid nominator " << nomination.nominator();
+  const int nominator = it->second;
+  it = player_index_.find(nomination.nominee());
+  CHECK(it != player_index_.end())
+      << "Invalid nominee " << nomination.nominee();
+  const int nominee = it->second;
+  CHECK(is_alive_[nominator])
+      << players_[nominator] << " is dead and cannot nominate.";
+  for (const auto& nom : nominations_) {
+    CHECK_NE(nom.Nominator, nominator)
+      << players_[nominator] << " has already nominated today.";
+    CHECK_NE(nom.Nominee, nominee)
+        << players_[nominee] << " has already been nominated today.";
+  }
+  nominations_.push_back({.Nominator = nominator, .Nominee = nominee});
+}
+
+void GameState::AddVote(const Vote& vote) {
+  // A Virgin didn't proc, otherwise we'd get an execution without a vote.
+  // TODO(olaola): finish this!!
 }
 
 void GameState::AddExecution(const string& name) {
+  CHECK(cur_time_.IsDay) << "Executions can only occur during the day.";
+  const auto it = player_index_.find(name);
+  CHECK(it != player_index_.end()) << "Invalid player " << name;
+  const int executee = it->second;
+  CHECK_EQ(execution_, kNoPlayer) << "More than one execution attempted.";
+  CHECK(!nominations_.empty()) << "Execution must have a preceding nomination.";
+
+  const auto& last_nom = nominations_[nominations_.size() - 1];
+  if (on_the_block_ == executee) {
+    // There is no Virgin proc. The constraints were already added on vote.
+  } else {
+    // Virgin proc.
+  }
+  // TODO(olaola): finish this!!
+  execution_ = executee;
 }
 
 void GameState::AddDeath(const string& name) {
+  // Deaths are Storyteller announcements of deaths, hence they only occur
+  // during the day.
+  CHECK(cur_time_.IsDay) << "Death annoucements can only occur during the day.";
+  // Deaths are either an announced night death, execution or Slayer shot.
+  // TODO(olaola): finish this!!
 }
 
 void GameState::AddClaim(const Claim& claim) {
@@ -473,7 +548,7 @@ void GameState::AddGoodWonConstraints() {
   // * The Imp killed themselves at night, AND
   // * No-one could catch the starpass (no alive minion - Recluse is optional)
   const auto& day_roles = day_roles_[day_roles_.size() - 1];
-  if (execution_ == kNoPlayer && slayer_death_ == kNoPlayer) {
+  if (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer) {
     if (night_death_ == kNoPlayer) {
         model_.AddBoolOr({model_.FalseVar()}).WithName(
             "Contradiction: no day or night kill, yet Good wins");
@@ -493,7 +568,7 @@ void GameState::AddGoodWonConstraints() {
     }
     return;
   }
-  int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_;
+  int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
   model_.FixVariable(day_roles[death][IMP], true);
   if (num_alive_ >= 5) {
     // SW is not alive or is poisoned.
@@ -511,15 +586,16 @@ void GameState::AddGoodWonConstraints() {
 }
 
 void GameState::AddEvilWonConstraints() {
-  // Evil wins if either:
-  // * Saint was executed, OR
+  // Evil wins only if either:
+  // * Non-poisoned Saint was executed, OR
   // * 2 players are alive, one of them the Imp.
   const auto& day_roles = day_roles_[day_roles_.size() - 1];
-  if (execution_ != kNoPlayer) {
+  if (execution_death_ != kNoPlayer) {
     const string name = absl::StrFormat(
-        "Evil wins on execution of %s -> Saint was executed",
-        players_[execution_]);
-    model_.AddEquality(day_roles[execution_][SAINT], model_.TrueVar())
+        "Evil wins on execution of %s -> non-poisoned Saint was executed",
+        players_[execution_death_]);
+    BoolVar poisoned = poisoner_pick_[cur_time_.Count][execution_death_];
+    model_.AddBoolAnd({day_roles[execution_death_][SAINT], poisoned.Not()})
           .WithName(name);
     return;
   }
@@ -528,13 +604,38 @@ void GameState::AddEvilWonConstraints() {
         "Contradiction: no execution and >=3 players alive, yet Evil wins");
     return;
   }
-  vector<BoolVar> alive_imp;
-  for (int i = 0; i < num_players_; ++i) {
-    if (is_alive_[i]) {
-      alive_imp.push_back(day_roles[i][IMP]);
-    }
-  }
+  vector<BoolVar> alive_imp = CollectAliveRoles(day_roles, {IMP});
   model_.AddExactlyOne(alive_imp).WithName("Evil wins -> an alive IMP exists");
+}
+
+void GameState::AddGameNotOverConstraints() {
+  // This is at the start of a night. It means !(GOOD won) && !(EVIL won).
+  //
+  // Good wins iff there is no alive Imp.
+  //
+  // Evil wins iff either:
+  // * A non-poisoned Saint was executed, OR
+  // * 2 players are alive, one of them the Imp.
+  if (num_alive_ <= 2) {
+    const string name = absl::StrFormat(
+        "Contradiction: %d players alive on night %d, yet game is not over",
+        num_alive_, cur_time_.Count);
+    model_.AddBoolOr({model_.FalseVar()}).WithName(name);
+    return;
+  }
+  const auto& night_roles = night_roles_[night_roles_.size() - 1];
+  vector<BoolVar> alive_imp = CollectAliveRoles(night_roles, {IMP});
+  model_.AddExactlyOne(alive_imp).WithName(absl::StrFormat(
+      "Good did not win -> an Imp is alive on night %d", cur_time_.Count));
+  if (execution_death_ != kNoPlayer) {
+    BoolVar poisoned = poisoner_pick_[cur_time_.Count - 2][execution_death_];
+    const string name = absl::StrFormat(
+        "Evil did not win day %d -> %s is not the SAINT or %s was poisoned",
+        cur_time_.Count - 1, players_[execution_death_],
+        players_[execution_death_]);
+    model_.AddBoolOr({night_roles[execution_death_][SAINT].Not(), poisoned})
+        .WithName(name);
+  }
 }
 
 bool GameState::IsValid() const {
