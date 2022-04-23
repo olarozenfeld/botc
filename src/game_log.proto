@@ -127,20 +127,20 @@ message SpyInfo {
 
 message RoleAction {
   oneof details {
-    LearnRoleInfo washerwoman_info = 6;
-    LearnRoleInfo librarian_info = 7;
-    LearnRoleInfo investigator_info = 8;
-    int32 chef_info = 9;
-    int32 empath_info = 10;
-    FortuneTellerAction fortuneteller_action = 11;
-    string monk_action = 12;
-    string butler_action = 13;
-    RavenkeeperInfo ravenkeeper_info = 14;
-    Role undertaker_info = 15;
-    string slayer_action = 16;
-    string poisoner_action = 17;
-    string imp_action = 18;
-    SpyInfo spy_info = 19;
+    LearnRoleInfo washerwoman_info = 1;
+    LearnRoleInfo librarian_info = 2;
+    LearnRoleInfo investigator_info = 3;
+    int32 chef_info = 4;
+    int32 empath_info = 5;
+    FortuneTellerAction fortuneteller_action = 6;
+    string monk_action = 7;
+    string butler_action = 8;
+    RavenkeeperInfo ravenkeeper_info = 9;
+    Role undertaker_info = 10;
+    string slayer_action = 11;
+    string poisoner_action = 12;
+    string imp_action = 13;
+    SpyInfo spy_info = 14;
   }
 }
 

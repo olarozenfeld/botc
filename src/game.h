@@ -71,6 +71,25 @@ class GameState {
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
   void AddVictory(Team victory);
+  void AddShownToken(int player, Role role);
+  void AddMinionInfo(int player, const MinionInfo& minion_info);
+  void AddDemonInfo(int player, const DemonInfo& demon_info);
+  void AddRoleAction(int player, const RoleAction& role_action);
+  void AddWasherwomanInfo(int player, const LearnRoleInfo& washerwoman_info);
+  void AddLibrarianInfo(int player, const LearnRoleInfo& librarian_info);
+  void AddInvestigatorInfo(int player, const LearnRoleInfo& investigator_info);
+  void AddChefInfo(int player, int chef_info);
+  void AddEmpathInfo(int player, int empath_info);
+  void AddFortunetellerAction(int player,
+                              const FortuneTellerAction& fortuneteller_action);
+  void AddMonkAction(int player, string monk_action);
+  void AddButlerAction(int player, string butler_action);
+  void AddRavenkeeperInfo(int player, const RavenkeeperInfo& ravenkeeper_info);
+  void AddUndertakerInfo(int player, Role undertaker_info);
+  void AddSlayerAction(int player, string slayer_action);
+  void AddPoisonerAction(int player, string poisoner_action);
+  void AddImpAction(int player, string imp_action);
+  void AddSpyInfo(int player, const SpyInfo& spy_info);
   void AddGameNotOverConstraints();
   void AddGoodWonConstraints();
   void AddEvilWonConstraints();

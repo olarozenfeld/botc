@@ -470,6 +470,27 @@ void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
 
 void GameState::AddStorytellerInteraction(
     const StorytellerInteraction& interaction) {
+  auto it = player_index_.find(interaction.player());
+  CHECK(it != player_index_.end())
+      << "Invalid player " << interaction.player();
+  const int player = it->second;
+  switch (interaction.details_case()) {
+    case StorytellerInteraction::kShownToken:
+      AddShownToken(player, interaction.shown_token());
+      break;
+    case StorytellerInteraction::kMinionInfo:
+      AddMinionInfo(player, interaction.minion_info());
+      break;
+    case StorytellerInteraction::kDemonInfo:
+      AddDemonInfo(player, interaction.demon_info());
+      break;
+    case StorytellerInteraction::kRoleAction:
+      AddRoleAction(player, interaction.role_action());
+      break;
+    default:
+      CHECK(false) << "Expected a valid interaction details, got: "
+                   << interaction.details_case();
+  }
 }
 
 void GameState::AddNomination(const Nomination& nomination) {
@@ -642,6 +663,112 @@ void GameState::AddVictory(Team victory) {
   } else {
     AddEvilWonConstraints();
   }
+}
+
+void GameState::AddShownToken(int player, Role role) {
+}
+
+void GameState::AddMinionInfo(int player, const MinionInfo& minion_info) {
+}
+
+void GameState::AddDemonInfo(int player, const DemonInfo& demon_info) {
+}
+
+void GameState::AddRoleAction(int player, const RoleAction& role_action) {
+  switch (role_action.details_case()) {
+    case RoleAction::kWasherwomanInfo:
+      AddWasherwomanInfo(player, role_action.washerwoman_info());
+      break;
+    case RoleAction::kLibrarianInfo:
+      AddLibrarianInfo(player, role_action.librarian_info());
+      break;
+    case RoleAction::kInvestigatorInfo:
+      AddInvestigatorInfo(player, role_action.investigator_info());
+      break;
+    case RoleAction::kChefInfo:
+      AddChefInfo(player, role_action.chef_info());
+      break;
+    case RoleAction::kEmpathInfo:
+      AddEmpathInfo(player, role_action.empath_info());
+      break;
+    case RoleAction::kFortunetellerAction:
+      AddFortunetellerAction(player, role_action.fortuneteller_action());
+      break;
+    case RoleAction::kMonkAction:
+      AddMonkAction(player, role_action.monk_action());
+      break;
+    case RoleAction::kButlerAction:
+      AddButlerAction(player, role_action.butler_action());
+      break;
+    case RoleAction::kRavenkeeperInfo:
+      AddRavenkeeperInfo(player, role_action.ravenkeeper_info());
+      break;
+    case RoleAction::kUndertakerInfo:
+      AddUndertakerInfo(player, role_action.undertaker_info());
+      break;
+    case RoleAction::kSlayerAction:
+      AddSlayerAction(player, role_action.slayer_action());
+      break;
+    case RoleAction::kPoisonerAction:
+      AddPoisonerAction(player, role_action.poisoner_action());
+      break;
+    case RoleAction::kImpAction:
+      AddImpAction(player, role_action.imp_action());
+      break;
+    case RoleAction::kSpyInfo:
+      AddSpyInfo(player, role_action.spy_info());
+      break;
+    default:
+      CHECK(false) << "Expected a valid role action details, got: "
+                   << role_action.details_case();
+  }
+}
+
+void GameState::AddWasherwomanInfo(
+    int player, const LearnRoleInfo& washerwoman_info) {
+}
+
+void GameState::AddLibrarianInfo(
+    int player, const LearnRoleInfo& librarian_info) {
+}
+
+void GameState::AddInvestigatorInfo(
+    int player, const LearnRoleInfo& investigator_info) {
+}
+
+void GameState::AddChefInfo(int player, int chef_info) {
+}
+
+void GameState::AddEmpathInfo(int player, int empath_info) {
+}
+
+void GameState::AddFortunetellerAction(
+    int player, const FortuneTellerAction& fortuneteller_action) {
+}
+
+void GameState::AddMonkAction(int player, string monk_action) {
+}
+
+void GameState::AddButlerAction(int player, string butler_action) {
+}
+
+void GameState::AddRavenkeeperInfo(
+    int player, const RavenkeeperInfo& ravenkeeper_info) {
+}
+
+void GameState::AddUndertakerInfo(int player, Role undertaker_info) {
+}
+
+void GameState::AddSlayerAction(int player, string slayer_action) {
+}
+
+void GameState::AddPoisonerAction(int player, string poisoner_action) {
+}
+
+void GameState::AddImpAction(int player, string imp_action) {
+}
+
+void GameState::AddSpyInfo(int player, const SpyInfo& spy_info) {
 }
 
 void GameState::AddGoodWonConstraints() {
