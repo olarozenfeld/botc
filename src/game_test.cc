@@ -106,6 +106,19 @@ TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
   EXPECT_FALSE(g.IsValid());
 }
 
+TEST(ObserverPerspective, SimpleTest) {
+  GameLog log;
+  auto* setup = log.mutable_setup();
+  setup->add_players("A");
+  setup->add_players("B");
+  setup->add_players("C");
+  setup->add_players("D");
+  setup->add_players("E");
+
+  GameState g(log);
+  EXPECT_TRUE(g.IsValid());
+}
+
 }  // namespace
 }  // namespace botc
 

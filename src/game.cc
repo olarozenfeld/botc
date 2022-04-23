@@ -121,7 +121,7 @@ void GameState::InitRedHerring(const string& name) {
   }
   BoolVar ft_in_play = NewVarRoleInPlay(FORTUNE_TELLER);
   // If a Fortune Teller is in play, there is exactly one red herring.
-  model_.AddExactlyOne(red_herring_)
+  model_.AddEquality(LinearExpr::Sum(red_herring_), 1)
       .OnlyEnforceIf(ft_in_play)
       .WithName("ft_in_play -> 1 red herring");
   // If a Fortune Teller is not in play, there is no red herring.
@@ -874,6 +874,8 @@ void GameState::AddGameNotOverConstraints() {
 bool GameState::IsValid() const {
   const CpSolverResponse response = Solve(model_.Build());
   LOG(INFO) << "response: " << response.DebugString();
-  return (response.status() == CpSolverStatus::OPTIMAL);
+  CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
+  CHECK(response.status() != CpSolverStatus::UNKNOWN);
+  return (response.status() == CpSolverStatus::OPTIMAL || response.status() == CpSolverStatus::FEASIBLE);
 }
 }  // namespace botc
