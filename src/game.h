@@ -40,6 +40,10 @@ struct Time {
 struct Nomination {
   int Nominator, Nominee;
 };
+
+struct SlayerShot {
+  int Slayer, Target;
+};
 }  // namespace internal
 
 // This contains an instance of a BOTC game on a particular time.
@@ -100,13 +104,13 @@ class GameState {
   vector<bool> is_alive_;  // Is player currently alive.
   int num_alive_;
   vector<internal::Nomination> nominations_;  // Last day nominations.
+  vector<internal::SlayerShot> slayer_shots_;  // Last day Slayer shots.
   int num_votes_;  // Votes on the last nomination.
   int on_the_block_;  // A player index (or kNoPlayer) for the execution block.
-  int execution_;  // A player index (or kNoPlayer) for today's executee.
+  int execution_;  // A player index (or kNoPlayer) for last day's executee.
   // Not the same to execution_, because executing dead players is valid.
-  int execution_death_;  // A player index for today's execution death.
-  // In TB, executees always die, so we don't need to track deaths separately.
-  int slayer_death_;  // A player index (or kNoPlayer) for Slayer kill.
+  int execution_death_;  // A player index for last day's execution death.
+  int slayer_death_;  // A player index (or kNoPlayer) for last day Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.
   Team victory_;
 
