@@ -21,6 +21,7 @@ using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpSolverStatus;
 using operations_research::sat::LinearExpr;
 
+
 namespace {
   const int kNumTownsfolk[] = {3, 3, 5, 5, 5, 7, 7, 7, 9, 9, 9};
   const int kNumOutsiders[] = {0, 1, 0, 1, 2, 0, 1, 2, 0, 1, 2};
@@ -37,6 +38,7 @@ namespace {
   const Role kOutsiderRoles[] = {BUTLER, DRUNK, RECLUSE, SAINT};
   const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
   const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
+  const Role kDemonRoles[] = {IMP};
 }  // namespace
 
 // TODO(olaola): replace CHECKs with absl::Status everywhere.
@@ -81,7 +83,7 @@ GameState::GameState(Perspective perspective, const Setup& setup)
   }
 
   InitRoleVars();
-  InitHelperVars();
+  night_roles_[0].InitIsEvil(kEvilRoles, player);
   InitRedHerring(setup.red_herring());
 }
 
@@ -108,6 +110,7 @@ void GameState::InitRedHerring(const string& name) {
     CHECK(it != player_index_.end()) << "Invalid red herring player: " << name;
     st_red_herring_ = it->second;
   }
+
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("red_herring_%s", players_[i]);
     BoolVar v = model_.NewBoolVar().WithName(name);
@@ -131,120 +134,54 @@ void GameState::InitRedHerring(const string& name) {
 }
 
 BoolVar GameState::NewVarRoleInPlay(Role role) {
-  string name = absl::StrFormat("in_play_%s", Role_Name(role));
-  BoolVar var = model_.NewBoolVar().WithName(name);
-  vector<BoolVar> player_is_role(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    player_is_role[i] = night_roles_[0][i][role];
-  }
-  // If roles are known, var can be fixed:
-  if (perspective_ == STORYTELLER) {
-    bool have_role = false;
-    for (Role r : st_player_roles_) {
-      if (r == role) {
-        have_role = true;
-        break;
-      }
-    }
-    model_.FixVariable(var, have_role);
-  }
-  model_.AddEquality(LinearExpr::Sum(player_is_role), var)
-      .WithName(absl::StrFormat("%s definition", name));
-  return var;
+  return night_roles_[0].RoleInPlay(role);
 }
 
 void GameState::InitRoleVars() {
   // night1_roles[i][role] is true iff player players_[i] has role.
-  vector<vector<BoolVar>> night1_roles(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    night1_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
-      // Variable/constraint names are for debugging only.
-      string name = absl::StrFormat(
-        "role_%s_%s_night_1", players_[i], Role_Name(role));
-      night1_roles[i].push_back(model_.NewBoolVar().WithName(name));
-    }
-  }
+  RoleMatrix night1_roles(model_, players_, Role_MIN, Role_MAX, 1);
   night_roles_.push_back(night1_roles);
+
   if (perspective_ == STORYTELLER) {
     for (int i = 0; i < num_players_; ++i) {
       Role role = st_player_roles_[i];
-      const auto& pr = night1_roles[i];
-      // We don't need to fix all of them, but it will be faster.
-      for (int role1 = Role_MIN + 1; role1 <= Role_MAX; ++role1) {
-          model_.FixVariable(pr[role1], role1 == role);
-      }
+      night1_roles.FixRole(i, role);
     }
   }
-  // Each player assigned exactly one role:
-  for (int i = 0; i < num_players_; ++i) {
-    string name = absl::StrFormat("player %s has unique role", players_[i]);
-    model_.AddExactlyOne(night1_roles[i]).WithName(name);
-  }
+  
   // There is exactly one IMP:
-  vector<BoolVar> player_is_imp(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    player_is_imp[i] = night1_roles[i][IMP];
-  }
-  model_.AddExactlyOne(player_is_imp).WithName("Exactly 1 IMP");
-  // Each role other than IMP assigned to at most one player:
-  for (int role = Role_MIN + 1; role < Role_MAX; ++role) {
-    vector<BoolVar> player_is_role(num_players_);
-    for (int i = 0; i < num_players_; ++i) {
-      player_is_role[i] = night1_roles[i][role];
-    }
-    string name = absl::StrFormat(
-      "Role %s has at most one player", Role_Name(role));
-    model_.AddAtMostOne(player_is_role).WithName(name);
-  }
-  // Appropriate numbers of outsiders, townsfolk and minions:
-  vector<BoolVar> minions;
-  for (int i = 0; i < num_players_; ++i) {
-    for (int role : kMinionRoles) {
-      minions.push_back(night1_roles[i][role]);
-    }
-  }
-  model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
+  night1_roles.enforceRoleCount(kDemonRoles, 1).WithName("Exactly 1 IMP");
+  
+  // Appropriate numbers of outsiders, townsfolk and minions
+  night1_roles.enforceRoleCount(kMinionRoles, num_minions_)
       .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
+  
+  night1_roles.enforceRoleCount(kOutsiderRoles, num_outsiders_)
+      .OnlyEnforceIf(baron_in_play.Not())
+      .WithName(
+        absl::StrFormat("!baron_in_play -> %d outsiders", num_outsiders_));
   AddBaronConstraints();
 }
 
 void GameState::AddBaronConstraints() {
-  BoolVar baron_in_play = NewVarRoleInPlay(BARON);
-  vector<BoolVar> outsiders = CollectRoles(night_roles_[0], kOutsiderRoles);
-  model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_)
+  BoolVar baron_in_play = night1_roles.RoleInPlay(BARON);
+  night1_roles_.enforceRoleCount(kOutsiderRoles, num_outsiders_)
       .OnlyEnforceIf(baron_in_play.Not())
       .WithName(
         absl::StrFormat("!baron_in_play -> %d outsiders", num_outsiders_));
-  model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_ + 2)
+  night1_roles.enforceRoleCount(kOutsiderRoles, num_outsiders_ + 2)
       .OnlyEnforceIf(baron_in_play)
       .WithName(
         absl::StrFormat("baron_in_play -> %d outsiders", num_outsiders_ + 2));
-  int num_townsfolk = kNumTownsfolk[num_players_ - 5];
-  vector<BoolVar> townsfolk = CollectRoles(night_roles_[0], kTownsfolkRoles);;
-  model_.AddEquality(LinearExpr::Sum(townsfolk), num_townsfolk)
+
+  night1_roles.enfoceRoleCount(kTownsfolkRoles, num_townsfolk)
       .OnlyEnforceIf(baron_in_play.Not())
       .WithName(
         absl::StrFormat("!baron_in_play -> %d townsfolk", num_townsfolk));
-  model_.AddEquality(LinearExpr::Sum(townsfolk), num_townsfolk - 2)
+  night1_roles.enfoceRoleCount(kTownsfolkRoles, num_townsfolk - 2)
       .OnlyEnforceIf(baron_in_play)
       .WithName(
         absl::StrFormat("baron_in_play -> %d townsfolk", num_townsfolk - 2));
-}
-
-void GameState::InitHelperVars() {
-  // A Player is Evil iff they have an Evil role on Night 1 (in TB).
-  for (int i = 0; i < num_players_; ++i) {
-    BoolVar is_evil = model_.NewBoolVar()
-        .WithName(absl::StrFormat("Evil_%s", players_[i]));
-    is_evil_.push_back(is_evil);
-    vector<BoolVar> evil_roles;
-    for (int role : kEvilRoles) {
-      evil_roles.push_back(night_roles_[0][i][role]);
-    }
-    model_.AddEquality(LinearExpr::Sum(evil_roles), is_evil)
-        .WithName(absl::StrFormat("Evil_%s definition", players_[i]));
-  }
 }
 
 void GameState::AddEvent(const Event& event) {
@@ -306,24 +243,18 @@ void GameState::AddNight(int count) {
 
 // Assumption: called only on Night > 1.
 void GameState::InitNextNightRoleVars() {
-  vector<vector<BoolVar>> night_roles(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    night_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
-      string name = absl::StrFormat(
-        "role_%s_%s_night_%d", players_[i], Role_Name(role), cur_time_.Count);
-      night_roles[i].push_back(model_.NewBoolVar().WithName(name));
-    }
-  }
+  RoleMatrix night_roles(num_players_, players_, Role_MIN, Role_MAX, cur_time_.Count));
   night_roles_.push_back(night_roles);
+
   // The Good roles propagate from night 1:
   const string prev_day_name = absl::StrFormat("day_%d", cur_time_.Count - 1);
   const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
-  PropagateRoles(night_roles_[0], night_roles, kGoodRoles, "night_1",
-                 night_name);
+
+  night_roles.PropagateRolesFrom(night_roles_[0], kGoodRoles, players_, "night_1", night_name);
+
   // All Evil roles except Scarlet Woman & Imp propagate from the previous day:
-  PropagateRoles(day_roles_.back(), night_roles,
-                 {POISONER, SPY, BARON}, prev_day_name, night_name);
+  night_roles.PropagateRolesFrom(day_roles_.back(), {POISONER, SPY, BARON}, players_, prev_day_name, night_name);
+  
   AddScarletWomanConstraints();
 }
 
@@ -446,26 +377,6 @@ vector<BoolVar> GameState::CollectRoles(const vector<vector<BoolVar>>& from,
 vector<BoolVar> GameState::CollectAliveRoles(
     const vector<vector<BoolVar>>& from, absl::Span<const Role> roles)  const {
   return CollectRoles(from, roles, true);
-}
-
-void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
-                               const vector<vector<BoolVar>>& to,
-                               absl::Span<const Role> roles,
-                               const string& from_name,
-                               const string& to_name) {
-  for (int i = 0; i < num_players_; ++i) {
-    for (int role : roles) {
-      string name = absl::StrFormat(
-          "Role %s for player %s propagates from %s to %s", Role_Name(role),
-          players_[i], from_name, to_name);
-      model_.AddEquality(from[i][role], to[i][role])
-          .WithName(name);
-      // Optimization: for storyteller perspective, we can fix these vars:
-      if (perspective_ == STORYTELLER) {
-        model_.FixVariable(to[i][role], st_player_roles_[i] == role);
-      }
-    }
-  }
 }
 
 void GameState::AddStorytellerInteraction(

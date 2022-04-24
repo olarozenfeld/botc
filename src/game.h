@@ -22,6 +22,8 @@
 #include "src/game_log.pb.h"
 #include "ortools/sat/cp_model.h"
 
+#include "src/role_matrix.h"
+
 namespace botc {
 
 using operations_research::sat::CpModelBuilder;
@@ -142,12 +144,13 @@ class GameState {
   // OR-Tools related variables: compiling BOTC to SAT.
   CpModelBuilder model_;
   vector<vector<vector<BoolVar>>> day_roles_;  // x day x player x role.
-  vector<vector<vector<BoolVar>>> night_roles_;  // x night x player x role.
+  vector<RoleMatrix> night_roles_;  // x night x player x role.
   vector<vector<BoolVar>> shown_token_;  // x player x role (night 1 only).
   vector<BoolVar> red_herring_;  // x player.
   vector<vector<BoolVar>> imp_pick_;  // x night x player, starting night 2.
   vector<vector<BoolVar>> poisoner_pick_;  // x night x player.
   vector<BoolVar> is_evil_;  // x player.
+
 };
 
 }  // namespace botc

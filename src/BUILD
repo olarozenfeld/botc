@@ -18,7 +18,7 @@ cc_library(
         "@com_google_ortools//ortools/base",
         "@com_google_ortools//ortools/sat:cp_model",
     ],
-    hdrs = ["game.h"],
+    hdrs = ["game.h", "role_matrix.h"],
 )
 
 cc_test(
