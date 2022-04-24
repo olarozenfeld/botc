@@ -15,8 +15,10 @@ cc_library(
     srcs = ["game.cc"],
     deps = [
         ":game_log_cc_proto",
+        "@com_google_absl//absl/types:span",
         "@com_google_ortools//ortools/base",
         "@com_google_ortools//ortools/sat:cp_model",
+        "@com_google_ortools//ortools/sat:cp_model_solver",
     ],
     hdrs = ["game.h"],
 )

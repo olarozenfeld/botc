@@ -69,11 +69,7 @@ message Setup {
 
   // The actual roles assigned by the Storyteller. Only visible in the ST
   // perspective. E.g. the Drunk will appear here as DRUNK.
-  message PlayerRole {
-    string player = 1;
-    Role role = 2;
-  }
-  repeated PlayerRole player_roles = 2;
+  map<string, Role> player_roles = 2;
 
   // Special startup fields for particular roles.
   string red_herring = 3; // The Fortune Teller's red herring.

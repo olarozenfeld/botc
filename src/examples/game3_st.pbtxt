@@ -9,32 +9,32 @@ setup {
   players: "Jaonos"
   # Actually has 2 outsiders instead of 0 because of Baron.
   player_roles {
-    player: "Neldor"
-    role: LIBRARIAN
+    key: "Neldor"
+    value: LIBRARIAN
   }
   player_roles {
-    player: "Elmon"
-    role: BARON
+    key: "Elmon"
+    value: BARON
   }
   player_roles {
-    player: "Raibyn"
-    role: DRUNK
+    key: "Raibyn"
+    value: DRUNK
   }
   player_roles {
-    player: "Haera"
-    role: INVESTIGATOR
+    key: "Haera"
+    value: INVESTIGATOR
   }
   player_roles {
-    player: "Tanila"
-    role: IMP
+    key: "Tanila"
+    value: IMP
   }
   player_roles {
-    player: "Ivaran"
-    role: UNDERTAKER
+    key: "Ivaran"
+    value: UNDERTAKER
   }
   player_roles {
-    player: "Jaonos"
-    role: BUTLER
+    key: "Jaonos"
+    value: BUTLER
   }
 }
 events {

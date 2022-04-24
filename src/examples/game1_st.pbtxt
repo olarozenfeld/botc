@@ -8,32 +8,32 @@ setup {
   players: "Shamyrra"
   players: "Sylvar"
   player_roles {
-    player: "Eletha"
-    role: WASHERWOMAN
+    key: "Eletha"
+    value: WASHERWOMAN
   }
   player_roles {
-    player: "Alwyn"
-    role: POISONER
+    key: "Alwyn"
+    value: POISONER
   }
   player_roles {
-    player: "Goren"
-    role: INVESTIGATOR
+    key: "Goren"
+    value: INVESTIGATOR
   }
   player_roles {
-    player: "Fernia"
-    role: SLAYER
+    key: "Fernia"
+    value: SLAYER
   }
   player_roles {
-    player: "Merethyl"
-    role: FORTUNE_TELLER
+    key: "Merethyl"
+    value: FORTUNE_TELLER
   }
   player_roles {
-    player: "Shamyrra"
-    role: IMP
+    key: "Shamyrra"
+    value: IMP
   }
   player_roles {
-    player: "Sylvar"
-    role: VIRGIN
+    key: "Sylvar"
+    value: VIRGIN
   }
   red_herring: "Fernia"
 }

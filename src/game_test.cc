@@ -21,73 +21,72 @@ namespace {
 
 GameLog FromRoles(absl::Span<const Role> roles) {
   GameLog log;
-  auto* setup = log.mutable_setup();
   log.set_perspective(STORYTELLER);
+  auto* setup = log.mutable_setup();
+  auto *player_roles = setup->mutable_player_roles();
   for (int i = 0; i < roles.size(); ++i) {
     const string player = absl::StrFormat("P%d", i);
     setup->add_players(player);
-    auto* pr = setup->add_player_roles();
-    pr->set_player(player);
-    pr->set_role(roles[i]);
+    (*player_roles)[player] = roles[i];
   }
   return log;
 }
 
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
   GameState g(FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Valid5PlayersBaron) {
   GameState g(FromRoles({IMP, SAINT, BARON, BUTLER, LIBRARIAN}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Valid6PlayersNoBaron) {
   GameState g(FromRoles(
     {DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Valid6PlayersBaron) {
   GameState g(FromRoles(
     {DRUNK, RECLUSE, MONK, BARON, SAINT, IMP}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Valid9PlayersNoBaron) {
   GameState g(FromRoles({DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP, SAINT,
                          WASHERWOMAN, CHEF}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Valid9PlayersBaron) {
   GameState g(FromRoles({DRUNK, SLAYER, RECLUSE, BUTLER, EMPATH, IMP, SAINT,
                          WASHERWOMAN, BARON}));
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoImp) {
   GameState g(FromRoles(
     {DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, CHEF}));
-  EXPECT_FALSE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 0);
 }
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoMinion) {
   GameState g(FromRoles({DRUNK, SLAYER, MONK, CHEF, EMPATH, IMP}));
-  EXPECT_FALSE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 0);
 }
 
 TEST(ValidateSTRoleSetup, Invalid13PlayersTwoMinions) {
   GameState g(FromRoles(
     {VIRGIN, SLAYER, MONK, CHEF, EMPATH, IMP, SPY, SCARLET_WOMAN,
      INVESTIGATOR, WASHERWOMAN, MAYOR, UNDERTAKER, SOLDIER}));
-  EXPECT_FALSE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 0);
 }
 
 TEST(ValidateSTRoleSetup, Invalid5PlayersRoleRepeat) {
   GameState g(FromRoles({IMP, EMPATH, SPY, EMPATH, VIRGIN}));
-  EXPECT_FALSE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 0);
 }
 
 TEST(ValidateSTRoleSetup, ValidFortuneTellerRedHerring) {
@@ -95,7 +94,7 @@ TEST(ValidateSTRoleSetup, ValidFortuneTellerRedHerring) {
       {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP});
   log.mutable_setup()->set_red_herring("P1");
   GameState g(log);
-  EXPECT_TRUE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 1);
 }
 
 TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
@@ -103,7 +102,7 @@ TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
       {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP});
   log.mutable_setup()->set_red_herring("P3");  // The SW can't be a red herring.
   GameState g(log);
-  EXPECT_FALSE(g.IsValid());
+  EXPECT_EQ(g.CountWorlds({}), 0);
 }
 
 TEST(ObserverPerspective, SimpleTest) {

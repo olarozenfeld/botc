@@ -35,6 +35,7 @@ namespace internal {
 struct Time {
   bool IsDay = false;
   int Count = 0;
+  string ToString() const;
 };
 
 struct Nomination {
@@ -56,12 +57,19 @@ class GameState {
 
   // Solves the game and returns whether worlds exist.
   bool IsValid() const;
-  const CpModelBuilder& Model() const { return model_; }  // for debugging
+  int CountWorlds(const unordered_map<string, Role>& assumptions);
+  const CpModelBuilder& SatModel() const { return model_; }  // for debugging
 
  private:
   void InitRoleVars();
   void InitHelperVars();
+  void InitNextNightRoleVars();
+  void InitNextNightHelperVars();
+  void InitNextDayRoleVars();
+  void InitNextDayHelperVars();
   void InitRedHerring(const string& name);
+
+  // Processing of game events.
   void AddDay(int count);
   void AddNight(int count);
   void AddStorytellerInteraction(const StorytellerInteraction& interaction);
@@ -80,7 +88,7 @@ class GameState {
   void AddInvestigatorInfo(int player, const LearnRoleInfo& investigator_info);
   void AddChefInfo(int player, int chef_info);
   void AddEmpathInfo(int player, int empath_info);
-  void AddFortunetellerAction(int player,
+  void AddFortuneTellerAction(int player,
                               const FortuneTellerAction& fortuneteller_action);
   void AddMonkAction(int player, string monk_action);
   void AddButlerAction(int player, string butler_action);
@@ -90,11 +98,6 @@ class GameState {
   void AddPoisonerAction(int player, string poisoner_action);
   void AddImpAction(int player, string imp_action);
   void AddSpyInfo(int player, const SpyInfo& spy_info);
-  void AddGameNotOverConstraints();
-  void AddGoodWonConstraints();
-  void AddEvilWonConstraints();
-  void InitNextNightRoleVars();
-  void InitNextNightHelperVars();
 
   // Syntactic-sugar-type helper functions.
   vector<BoolVar> CollectRoles(const vector<vector<BoolVar>>& from,
@@ -106,14 +109,24 @@ class GameState {
                                     absl::Span<const Role> roles) const;
   void PropagateRoles(const vector<vector<BoolVar>>& from,
                       const vector<vector<BoolVar>>& to,
-                      absl::Span<const Role> roles,
-                      const string& from_name,
-                      const string& to_name);
+                      absl::Span<const Role> roles);
+  void PropagateRolesForPlayer(int player,
+                               const vector<vector<BoolVar>>& from,
+                               const vector<vector<BoolVar>>& to,
+                               absl::Span<const Role> roles);
   BoolVar NewVarRoleInPlay(Role role);
 
   // Constraints implementing particular roles.
   void AddBaronConstraints();
   void AddScarletWomanConstraints();
+  void AddImpStarpassConstraints();
+
+  // Other constraints.
+  void AddRoleUniquenessConstraints(
+      const vector<vector<BoolVar>>& player_roles);
+  void AddGameNotOverConstraints();
+  void AddGoodWonConstraints();
+  void AddEvilWonConstraints();
 
   Perspective perspective_;
   vector<string> players_;
@@ -131,6 +144,7 @@ class GameState {
   int execution_death_;  // A player index for last day's execution death.
   int slayer_death_;  // A player index (or kNoPlayer) for last day Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.
+  bool game_maybe_over_;  // Whether the next event can be a Victory event.
   Team victory_;
 
   // These variables are only used in the storyteller perspective.

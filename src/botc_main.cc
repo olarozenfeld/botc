@@ -33,28 +33,18 @@ GameLog CreateGameLog() {
   for (const auto& player : {"a", "b", "c", "d", "e"}) {
     setup->add_players(player);
   }
-  auto* pr = setup->add_player_roles();
-  pr->set_player("a");
-  pr->set_role(IMP);
-  pr = setup->add_player_roles();
-  pr->set_player("b");
-  pr->set_role(MONK);
-  pr = setup->add_player_roles();
-  pr->set_player("c");
-  pr->set_role(SPY);
-  pr = setup->add_player_roles();
-  pr->set_player("d");
-  pr->set_role(EMPATH);
-  pr = setup->add_player_roles();
-  pr->set_player("e");
-  pr->set_role(VIRGIN);
+  auto *player_roles = setup->mutable_player_roles();
+  (*player_roles)["a"] = IMP;
+  (*player_roles)["b"] = MONK;
+  (*player_roles)["c"] = SPY;
+  (*player_roles)["d"] = EMPATH;
+  (*player_roles)["e"] = VIRGIN;
 
   return log;
 }
-}  // namespace botc
 
-int main(int argc, char** argv) {
-  GameState g(botc::CreateGameLog());
+void Run() {
+  GameState g(CreateGameLog());
 
   const char *filename = "./model.pbtxt";
 
@@ -63,9 +53,14 @@ int main(int argc, char** argv) {
 
   FileOutputStream* output = new FileOutputStream(fd);
 
-  TextFormat::Print(g.Model().Build(), output);
+  TextFormat::Print(g.SatModel().Build(), output);
   output->Flush();
   close(fd);
-  LOG(INFO) << "Valid: " << g.IsValid();
+  LOG(INFO) << "Valid: " << g.CountWorlds({{"a", IMP}});
+}
+}  // namespace botc
+
+int main(int argc, char** argv) {
+  botc::Run();
   return 0;
 }

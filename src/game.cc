@@ -13,52 +13,68 @@
 
 #include "src/game.h"
 
+#include "ortools/sat/cp_model.pb.h"
+#include "ortools/sat/cp_model_solver.h"
+#include "ortools/sat/model.h"
+#include "ortools/sat/sat_parameters.pb.h"
+
 namespace botc {
 
 const int kNoPlayer =  - 1;  // Used in place of player index.
 
+namespace {
 using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpSolverStatus;
 using operations_research::sat::LinearExpr;
+using operations_research::sat::Model;
+using operations_research::sat::NewFeasibleSolutionObserver;
+using operations_research::sat::SatParameters;
 
-namespace {
-  const int kNumTownsfolk[] = {3, 3, 5, 5, 5, 7, 7, 7, 9, 9, 9};
-  const int kNumOutsiders[] = {0, 1, 0, 1, 2, 0, 1, 2, 0, 1, 2};
-  const int kNumMinions[] = {1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3};
-  const Role kGoodRoles[] = {
-      WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
-      UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR,
-      BUTLER, DRUNK, RECLUSE, SAINT
-  };
-  const Role kTownsfolkRoles[] = {
-      WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
-      UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR
-  };
-  const Role kOutsiderRoles[] = {BUTLER, DRUNK, RECLUSE, SAINT};
-  const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
-  const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
+const int kNumTownsfolk[] = {3, 3, 5, 5, 5, 7, 7, 7, 9, 9, 9};
+const int kNumOutsiders[] = {0, 1, 0, 1, 2, 0, 1, 2, 0, 1, 2};
+const int kNumMinions[] = {1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3};
+const Role kGoodRoles[] = {
+    WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
+    UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR,
+    BUTLER, DRUNK, RECLUSE, SAINT
+};
+const Role kTownsfolkRoles[] = {
+    WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
+    UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR
+};
+const Role kOutsiderRoles[] = {BUTLER, DRUNK, RECLUSE, SAINT};
+const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
+const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
 }  // namespace
 
+namespace internal {
+string Time::ToString() const {
+  return absl::StrFormat("%s_%d", IsDay ? "day" : "night", Count);
+}
+}  // namespace internal
+
 // TODO(olaola): replace CHECKs with absl::Status everywhere.
+// TODO(olaola): fix the day poisoned bug (alive poisoner should exist).
 
 GameState::GameState(Perspective perspective, const Setup& setup)
     : perspective_(perspective), num_players_(setup.players_size()),
       is_alive_(num_players_, true), num_alive_(num_players_),
       num_votes_(0), on_the_block_(kNoPlayer), execution_(kNoPlayer),
       execution_death_(kNoPlayer), slayer_death_(kNoPlayer),
-      night_death_(kNoPlayer), victory_(TEAM_UNSPECIFIED),
-      st_player_roles_(num_players_), st_red_herring_(kNoPlayer),
-      st_poisoner_pick_(kNoPlayer), st_imp_pick_(kNoPlayer) {
+      night_death_(kNoPlayer), game_maybe_over_(false),
+      victory_(TEAM_UNSPECIFIED), st_player_roles_(num_players_),
+      st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
+      st_imp_pick_(kNoPlayer) {
   CHECK_GE(num_players_, 5);
   CHECK_LE(num_players_, 15);
   num_outsiders_ = kNumOutsiders[num_players_ - 5];
   num_minions_ = kNumMinions[num_players_ - 5];
   int player_index = 0;
   for (const auto& name : setup.players()) {
-      players_.push_back(name);
-      CHECK(player_index_.find(name) == player_index_.end())
-          << "Player " << name << " is not unique";
-      player_index_[name] = player_index++;
+    players_.push_back(name);
+    CHECK(player_index_.find(name) == player_index_.end())
+        << "Player " << name << " is not unique";
+    player_index_[name] = player_index++;
   }
 
   if (perspective_ == STORYTELLER) {
@@ -71,13 +87,13 @@ GameState::GameState(Perspective perspective, const Setup& setup)
     CHECK(setup.red_herring().empty())
         << "Red-herring info in non-storyteller perspective.";
   }
-  for (const auto& player_role : setup.player_roles()) {
-    const string& name = player_role.player();
-    CHECK_NE(player_role.role(), ROLE_UNSPECIFIED)
+  for (const auto& pr : setup.player_roles()) {
+    const string& name = pr.first;
+    CHECK_NE(pr.second, ROLE_UNSPECIFIED)
         << "Got unassigned role for player " << name;
-    const auto it = player_index_.find(name);
+    const auto& it = player_index_.find(name);
     CHECK(it != player_index_.end()) << "Invalid player name: " << name;
-    st_player_roles_[it->second] = player_role.role();
+    st_player_roles_[it->second] = pr.second;
   }
 
   InitRoleVars();
@@ -176,37 +192,37 @@ void GameState::InitRoleVars() {
       }
     }
   }
+  AddRoleUniquenessConstraints(night1_roles);
+  // Appropriate numbers of outsiders, townsfolk and minions:
+  vector<BoolVar> minions = CollectRoles(night1_roles, kMinionRoles);
+  model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
+      .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
+  AddBaronConstraints();
+}
+
+void GameState::AddRoleUniquenessConstraints(
+    const vector<vector<BoolVar>>& player_roles) {
+  const string time = cur_time_.ToString();
   // Each player assigned exactly one role:
   for (int i = 0; i < num_players_; ++i) {
-    string name = absl::StrFormat("player %s has unique role", players_[i]);
-    model_.AddExactlyOne(night1_roles[i]).WithName(name);
+    string name = absl::StrFormat("player %s has unique role %s", players_[i],
+                                  time);
+    model_.AddExactlyOne(player_roles[i]).WithName(name);
   }
-  // There is exactly one IMP:
-  vector<BoolVar> player_is_imp(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    player_is_imp[i] = night1_roles[i][IMP];
-  }
-  model_.AddExactlyOne(player_is_imp).WithName("Exactly 1 IMP");
   // Each role other than IMP assigned to at most one player:
   for (int role = Role_MIN + 1; role < Role_MAX; ++role) {
     vector<BoolVar> player_is_role(num_players_);
     for (int i = 0; i < num_players_; ++i) {
-      player_is_role[i] = night1_roles[i][role];
+      player_is_role[i] = player_roles[i][role];
     }
-    string name = absl::StrFormat(
-      "Role %s has at most one player", Role_Name(role));
+    string name = absl::StrFormat("Role %s has at most one player %s",
+                                  Role_Name(role), time);
     model_.AddAtMostOne(player_is_role).WithName(name);
   }
-  // Appropriate numbers of outsiders, townsfolk and minions:
-  vector<BoolVar> minions;
-  for (int i = 0; i < num_players_; ++i) {
-    for (int role : kMinionRoles) {
-      minions.push_back(night1_roles[i][role]);
-    }
-  }
-  model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
-      .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
-  AddBaronConstraints();
+  // There needs to be exactly one alive IMP (before game ends):
+  vector<BoolVar> alive_imp = CollectAliveRoles(player_roles, {IMP});
+  const string name = absl::StrFormat("Exactly 1 alive Imp on %s", time);
+  model_.AddExactlyOne(alive_imp).WithName(name);
 }
 
 void GameState::AddBaronConstraints() {
@@ -249,6 +265,10 @@ void GameState::InitHelperVars() {
 
 void GameState::AddEvent(const Event& event) {
   CHECK_EQ(victory_, TEAM_UNSPECIFIED) << "No events allowed after victory";
+  if (game_maybe_over_ && event.details_case() != Event::kVictory) {
+    AddGameNotOverConstraints();
+    game_maybe_over_ = false;
+  }
   switch (event.details_case()) {
     case Event::kDay:
       AddDay(event.day());
@@ -270,6 +290,7 @@ void GameState::AddEvent(const Event& event) {
       break;
     case Event::kDeath:
       AddDeath(event.death());
+      game_maybe_over_ = true;
       break;
     case Event::kClaim:
       AddClaim(event.claim());
@@ -284,6 +305,18 @@ void GameState::AddEvent(const Event& event) {
 }
 
 void GameState::AddDay(int count) {
+  CHECK(!cur_time_.IsDay)
+      << "Trying to begin another day during day " << cur_time_.Count;
+  cur_time_.IsDay = true;
+  CHECK_EQ(count, cur_time_.Count) << absl::StrFormat(
+      "Day %d needs to follow night %d", cur_time_.Count, cur_time_.Count);
+  InitNextDayRoleVars();
+  InitNextDayHelperVars();
+  nominations_.clear();
+  slayer_shots_.clear();
+  num_votes_ = 0;
+  on_the_block_ = execution_ = execution_death_ = slayer_death_ = night_death_ =
+      kNoPlayer;
 }
 
 void GameState::AddNight(int count) {
@@ -299,8 +332,7 @@ void GameState::AddNight(int count) {
       "Night %d needs to follow day %d", cur_time_.Count + 1, cur_time_.Count);
   cur_time_.Count++;
   InitNextNightRoleVars();
-  InitNextNightHelperVars();
-  AddGameNotOverConstraints();  // Everyone go to sleep -> game is continuing.
+  InitNextNightHelperVars();  // In particular, imp and poisoner picks.
   night_death_ = st_poisoner_pick_ = st_imp_pick_ = kNoPlayer;
 }
 
@@ -315,15 +347,12 @@ void GameState::InitNextNightRoleVars() {
       night_roles[i].push_back(model_.NewBoolVar().WithName(name));
     }
   }
+  AddRoleUniquenessConstraints(night_roles);
   night_roles_.push_back(night_roles);
   // The Good roles propagate from night 1:
-  const string prev_day_name = absl::StrFormat("day_%d", cur_time_.Count - 1);
-  const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
-  PropagateRoles(night_roles_[0], night_roles, kGoodRoles, "night_1",
-                 night_name);
+  PropagateRoles(night_roles_[0], night_roles, kGoodRoles);
   // All Evil roles except Scarlet Woman & Imp propagate from the previous day:
-  PropagateRoles(day_roles_.back(), night_roles,
-                 {POISONER, SPY, BARON}, prev_day_name, night_name);
+  PropagateRoles(day_roles_.back(), night_roles, {POISONER, SPY, BARON});
   AddScarletWomanConstraints();
 }
 
@@ -342,6 +371,28 @@ void GameState::InitNextNightHelperVars() {
     poisoner_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   poisoner_pick_.push_back(poisoner_picks);
+}
+
+void GameState::InitNextDayRoleVars() {
+  vector<vector<BoolVar>> day_roles(num_players_);
+  for (int i = 0; i < num_players_; ++i) {
+    day_roles[i].push_back(model_.FalseVar());  // dummy variable
+    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
+      string name = absl::StrFormat(
+        "role_%s_%s_%s", players_[i], Role_Name(role), cur_time_.ToString());
+      day_roles[i].push_back(model_.NewBoolVar().WithName(name));
+    }
+  }
+  AddRoleUniquenessConstraints(day_roles);
+  day_roles_.push_back(day_roles);
+  // The Imp, and all Good roles except Recluse always propagate from night 1:
+  PropagateRoles(night_roles_[0], day_roles, kTownsfolkRoles);
+  PropagateRoles(night_roles_[0], day_roles, {BUTLER, DRUNK, SAINT});
+  // The Minions and Recluse can catch a starpass.
+  AddImpStarpassConstraints();
+}
+
+void GameState::InitNextDayHelperVars() {
 }
 
 void GameState::AddScarletWomanConstraints() {
@@ -378,13 +429,10 @@ void GameState::AddScarletWomanConstraints() {
     // We do not return here, because we still want to add all the general SW
     // constraints, even though we just fixed the variables, as a sanity check.
   }
-  const string prev_day_name = absl::StrFormat("day_%d", cur_time_.Count - 1);
-  const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
   if (num_alive_ < 5 ||
       (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
     // Then we know for sure SW can't trigger.
-    PropagateRoles(day_roles, night_roles, {SCARLET_WOMAN, IMP}, prev_day_name,
-                   night_name);
+    PropagateRoles(day_roles, night_roles, {SCARLET_WOMAN, IMP});
     return;
   }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
@@ -397,7 +445,8 @@ void GameState::AddScarletWomanConstraints() {
     BoolVar day_sw_i = day_roles[i][SCARLET_WOMAN];
     // The Imp remains an Imp, even dead.
     model_.AddImplication(day_imp_i, night_imp_i);
-    const string name = absl::StrFormat("sw_trigger_%s_%d", prev_day_name, i);
+    const string name = absl::StrFormat(
+        "sw_trigger_day_%d_%s", cur_time_.Count - 1, players_[i]);
     BoolVar sw_trigger_i = model_.NewBoolVar().WithName(name);
     if (is_alive_[i]) {
       model_.AddBoolAnd({day_sw_i, poisoner_pick[i].Not(), imp_died})
@@ -422,6 +471,121 @@ void GameState::AddScarletWomanConstraints() {
         .WithName(absl::StrFormat("%s -> !%s ^ %s", night_sw_i.Name(),
                   name, day_sw_i.Name()));
   }
+}
+
+void GameState::AddImpStarpassConstraints() {
+  // If an alive, non-poisoned Imp picks themselves, any alive Minion or (very
+  // rarely) a non-poisoned Recluse can catch a starpass. I *don't* want to meta
+  // the storyteller here and enforce that a Recluse starpass can only happen
+  // if there are no alive minions - it is a possibility regardless.
+  const auto& day_roles = day_roles_.back();
+  const auto& night_roles = night_roles_.back();
+  const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
+  // Starpass trigger: an alive, non-poisoned Imp picks themselves.
+  vector<BoolVar> player_starpass;
+  for (int i = 0; i < num_players_; ++i) {
+    if (is_alive_[i]) {
+      const BoolVar& imp_i = night_roles[i][IMP];
+      const BoolVar& poisoned_i = poisoner_pick_.back()[i];
+      const BoolVar& imp_pick_i = imp_pick_.back()[i];
+      BoolVar starpass_i = model_.NewBoolVar().WithName(
+          absl::StrFormat("%s_starpass_%s", players_[i], night_name));
+      player_starpass.push_back(starpass_i);
+      string name = absl::StrFormat(
+          "!%s -> !%s V %s V !%s", starpass_i.Name(), imp_i.Name(),
+          poisoned_i.Name(), imp_pick_i.Name());
+      model_.AddBoolOr({imp_i.Not(), poisoned_i, imp_pick_i.Not()})
+            .OnlyEnforceIf(starpass_i.Not())
+            .WithName(name);
+      name = absl::StrFormat(
+          "%s -> %s ^ !%s ^ %s", starpass_i.Name(), imp_i.Name(),
+          poisoned_i.Name(), imp_pick_i.Name());
+      model_.AddBoolAnd({imp_i, poisoned_i.Not(), imp_pick_i})
+            .OnlyEnforceIf(starpass_i)
+            .WithName(name);
+    }
+  }
+  BoolVar starpass = model_.NewBoolVar().WithName(
+      absl::StrFormat("starpass_triggers_%s", night_name));
+  model_.AddEquality(LinearExpr::Sum(player_starpass), starpass)
+      .WithName(absl::StrFormat("%s <-> Exactly one alive player starpasses.",
+                                starpass.Name()));
+
+  vector<BoolVar> player_catch;
+  vector<BoolVar> eligible;
+  BoolVar nobody_eligible = model_.NewBoolVar().WithName(
+      absl::StrFormat("nobody_eligible_for_starpass_%s", night_name));
+  for (int i = 0; i < num_players_; ++i) {
+    // The Imp remains an Imp, dead or alive.
+    const BoolVar& day_imp_i = day_roles[i][IMP];
+    const BoolVar& night_imp_i = night_roles[i][IMP];
+    model_.AddImplication(night_imp_i, day_imp_i);
+    if (!is_alive_[i]) {
+      // Dead players can't catch a starpass.
+      PropagateRolesForPlayer(i, night_roles, day_roles, kMinionRoles);
+      PropagateRolesForPlayer(i, night_roles, day_roles, {RECLUSE});
+    } else {
+      BoolVar catch_i = model_.NewBoolVar().WithName(
+          absl::StrFormat("%s_catches_starpass_%s", players_[i], night_name));
+      player_catch.push_back(catch_i);
+      // catch_i <-> !night_imp_i ^ day_imp_i
+      model_.AddBoolAnd({night_imp_i.Not(), day_imp_i})
+          .OnlyEnforceIf(catch_i)
+          .WithName(absl::StrFormat("%s -> !%s ^ %s", catch_i.Name(),
+                                    night_imp_i.Name(), day_imp_i.Name()));
+      model_.AddBoolOr({night_imp_i, day_imp_i.Not()})
+          .OnlyEnforceIf(catch_i.Not())
+          .WithName(absl::StrFormat("!%s -> %s V !%s", catch_i.Name(),
+                                    night_imp_i.Name(), day_imp_i.Name()));
+      const BoolVar& recluse_i = night_roles[i][RECLUSE];
+      const BoolVar& poisoned_i = poisoner_pick_.back()[i];
+      BoolVar healthy_recluse_i = model_.NewBoolVar().WithName(
+          absl::StrFormat("healthy_recluse_%s_%s", players_[i], night_name));
+      model_.AddBoolAnd({recluse_i, poisoned_i.Not()})
+          .OnlyEnforceIf(healthy_recluse_i)
+          .WithName(absl::StrFormat("%s -> %s ^ !%s", healthy_recluse_i.Name(),
+                                    recluse_i.Name(), poisoned_i.Name()));
+      model_.AddBoolOr({recluse_i.Not(), poisoned_i})
+          .OnlyEnforceIf(healthy_recluse_i.Not())
+          .WithName(absl::StrFormat("!%s -> !%s V %s", healthy_recluse_i.Name(),
+                                    recluse_i.Name(), poisoned_i.Name()));
+      vector<BoolVar> eligible_i;
+      // eligible_i <-> i is minion or healthy Recluse
+      for (Role role : {POISONER, SPY, SCARLET_WOMAN, BARON, RECLUSE}) {
+        const BoolVar& night_role_i = night_roles[i][role];
+        const BoolVar& day_role_i = day_roles[i][role];
+        const BoolVar& e = role == RECLUSE ? healthy_recluse_i : night_role_i;
+        eligible_i.push_back(e);
+        eligible.push_back(e);
+        model_.AddImplication(e, nobody_eligible.Not()).WithName(
+            absl::StrFormat("%s -> !%s", e.Name(), nobody_eligible.Name()));
+        model_.AddEquality(night_role_i, day_role_i)
+              .OnlyEnforceIf(catch_i.Not())
+              .WithName(absl::StrFormat(
+                  "!%s -> %s = %s", catch_i.Name(), night_role_i.Name(),
+                  day_role_i.Name()));
+      }
+      // catch_i -> exactly 1 of eligible_i.
+      model_.AddEquality(LinearExpr::Sum(eligible_i), 1)
+            .OnlyEnforceIf(catch_i)
+            .WithName(absl::StrFormat("%s -> %s is exactly 1 of eligible",
+                                      catch_i.Name(), players_[i]));
+    }
+  }
+  model_.AddEquality(LinearExpr::Sum(eligible), 0)
+        .OnlyEnforceIf(nobody_eligible)
+        .WithName(absl::StrFormat("%s -> nobody is eligible",
+                                  nobody_eligible.Name()));
+  // !starpass -> exactly zero catch
+  model_.AddEquality(LinearExpr::Sum(player_catch), 0)
+        .OnlyEnforceIf(starpass.Not())
+        .WithName(absl::StrFormat("!%s -> no catch", starpass.Name()));
+  // starpass -> exactly one catches OR nobody eligible
+  player_catch.push_back(nobody_eligible);
+  model_.AddEquality(LinearExpr::Sum(player_catch), 1)
+        .OnlyEnforceIf(starpass)
+        .WithName(absl::StrFormat(
+            "%s -> 1 catch or noone eligible", starpass.Name()));
 }
 
 vector<BoolVar> GameState::CollectRoles(const vector<vector<BoolVar>>& from,
@@ -450,20 +614,27 @@ vector<BoolVar> GameState::CollectAliveRoles(
 
 void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
                                const vector<vector<BoolVar>>& to,
-                               absl::Span<const Role> roles,
-                               const string& from_name,
-                               const string& to_name) {
+                               absl::Span<const Role> roles) {
   for (int i = 0; i < num_players_; ++i) {
-    for (int role : roles) {
-      string name = absl::StrFormat(
-          "Role %s for player %s propagates from %s to %s", Role_Name(role),
-          players_[i], from_name, to_name);
-      model_.AddEquality(from[i][role], to[i][role])
-          .WithName(name);
-      // Optimization: for storyteller perspective, we can fix these vars:
-      if (perspective_ == STORYTELLER) {
-        model_.FixVariable(to[i][role], st_player_roles_[i] == role);
-      }
+    PropagateRolesForPlayer(i, from, to, roles);
+  }
+}
+
+void GameState::PropagateRolesForPlayer(
+    int player,
+    const vector<vector<BoolVar>>& from,
+    const vector<vector<BoolVar>>& to,
+    absl::Span<const Role> roles) {
+  for (Role role : roles) {
+    const BoolVar& v_from = from[player][role];
+    const BoolVar& v_to = to[player][role];
+    string name = absl::StrFormat(
+        "Player %s role %s propagation: %s = %s", players_[player],
+        Role_Name(role), v_from.Name(), v_to.Name());
+    model_.AddEquality(v_from, v_to).WithName(name);
+    // Optimization: for storyteller perspective, we can fix these vars:
+    if (perspective_ == STORYTELLER) {
+      model_.FixVariable(to[player][role], st_player_roles_[player] == role);
     }
   }
 }
@@ -629,7 +800,8 @@ void GameState::AddDeath(const string& name) {
     CHECK_EQ(death, shot.Target)
         << absl::StrFormat("Expected death of Slayer shot %s, got %s.",
                            players_[shot.Target], name);
-    // Slayer procs, so we know they are alive, not poisoned, and shot the Imp:
+    // Slayer procs, so we know they are alive, not poisoned, and shot the Imp
+    // or a non-poisoned Recluse: TODO(olaola): add this!
     CHECK(is_alive_[shot.Slayer])
         << "Slayer " << players_[shot.Slayer] << " needs to be alive to proc.";
     const BoolVar& slayer = night_roles_[0][shot.Slayer][SLAYER];
@@ -692,7 +864,7 @@ void GameState::AddRoleAction(int player, const RoleAction& role_action) {
       AddEmpathInfo(player, role_action.empath_info());
       break;
     case RoleAction::kFortunetellerAction:
-      AddFortunetellerAction(player, role_action.fortuneteller_action());
+      AddFortuneTellerAction(player, role_action.fortuneteller_action());
       break;
     case RoleAction::kMonkAction:
       AddMonkAction(player, role_action.monk_action());
@@ -742,7 +914,7 @@ void GameState::AddChefInfo(int player, int chef_info) {
 void GameState::AddEmpathInfo(int player, int empath_info) {
 }
 
-void GameState::AddFortunetellerAction(
+void GameState::AddFortuneTellerAction(
     int player, const FortuneTellerAction& fortuneteller_action) {
 }
 
@@ -842,7 +1014,7 @@ void GameState::AddEvilWonConstraints() {
 }
 
 void GameState::AddGameNotOverConstraints() {
-  // This is at the start of a night. It means !(GOOD won) && !(EVIL won).
+  // This is during the day, after a death. It means !(GOOD won) && !(EVIL won).
   //
   // Good wins iff there is no alive Imp.
   //
@@ -851,17 +1023,17 @@ void GameState::AddGameNotOverConstraints() {
   // * 2 players are alive, one of them the Imp.
   if (num_alive_ <= 2) {
     const string name = absl::StrFormat(
-        "Contradiction: %d players alive on night %d, yet game is not over",
-        num_alive_, cur_time_.Count);
+        "Contradiction: %d players alive on %s, yet game is not over",
+        num_alive_, cur_time_.ToString());
     model_.AddBoolOr({model_.FalseVar()}).WithName(name);
     return;
   }
   const auto& night_roles = night_roles_.back();
   vector<BoolVar> alive_imp = CollectAliveRoles(night_roles, {IMP});
   model_.AddExactlyOne(alive_imp).WithName(absl::StrFormat(
-      "Good did not win -> an Imp is alive on night %d", cur_time_.Count));
+      "Good did not win -> 1 Imp is alive on %s", cur_time_.ToString()));
   if (execution_death_ != kNoPlayer) {
-    BoolVar poisoned = poisoner_pick_[cur_time_.Count - 2][execution_death_];
+    BoolVar poisoned = poisoner_pick_.back()[execution_death_];
     const string name = absl::StrFormat(
         "Evil did not win day %d -> %s is not the SAINT or %s was poisoned",
         cur_time_.Count - 1, players_[execution_death_],
@@ -876,6 +1048,32 @@ bool GameState::IsValid() const {
   LOG(INFO) << "response: " << response.DebugString();
   CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
   CHECK(response.status() != CpSolverStatus::UNKNOWN);
-  return (response.status() == CpSolverStatus::OPTIMAL || response.status() == CpSolverStatus::FEASIBLE);
+  return (response.status() == CpSolverStatus::OPTIMAL ||
+      response.status() == CpSolverStatus::FEASIBLE);
+}
+
+int GameState::CountWorlds(
+    const unordered_map<string, Role>& assumptions) {
+  vector<BoolVar> assumption_literals;
+  for (const auto& it : assumptions) {
+    const auto pit = player_index_.find(it.first);
+    CHECK(pit != player_index_.end()) << "Invalid player name: " << it.first;
+    int player = pit->second;
+    const auto& current_roles = cur_time_.IsDay ? day_roles_ : night_roles_;
+    assumption_literals.push_back(current_roles.back()[player][it.second]);
+  }
+  model_.AddAssumptions(assumption_literals);
+  SatParameters parameters;
+  parameters.set_search_branching(SatParameters::FIXED_SEARCH);
+  parameters.set_enumerate_all_solutions(true);
+  Model model;
+  model.Add(NewSatParameters(parameters));
+  int result = 0;
+  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
+      ++result;
+  }));
+  SolveCpModel(model_.Build(), &model);
+  model_.ClearAssumptions();
+  return result;
 }
 }  // namespace botc
