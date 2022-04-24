@@ -56,7 +56,7 @@ void Run() {
   TextFormat::Print(g.SatModel().Build(), output);
   output->Flush();
   close(fd);
-  LOG(INFO) << "Valid: " << g.CountWorlds({{"a", IMP}});
+  LOG(INFO) << "# worlds: " << g.CountWorlds({{"a", IMP}});
 }
 }  // namespace botc
 
