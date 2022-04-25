@@ -10,11 +10,23 @@ cc_proto_library(
     deps = [":game_log_proto"],
 )
 
+proto_library(
+    name = "solver_proto",
+    srcs = ["solver.proto"],
+    deps = [":game_log_proto"],
+)
+
+cc_proto_library(
+    name = "solver_cc_proto",
+    deps = [":solver_proto"],
+)
+
 cc_library(
     name = "game_lib",
     srcs = ["game.cc"],
     deps = [
         ":game_log_cc_proto",
+        ":solver_cc_proto",
         "@com_google_absl//absl/types:span",
         "@com_google_ortools//ortools/base",
         "@com_google_ortools//ortools/sat:cp_model",

@@ -19,32 +19,20 @@
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 #include "google/protobuf/text_format.h"
 
-using botc::GameLog;
 using botc::GameState;
 using google::protobuf::io::FileOutputStream;
 using google::protobuf::TextFormat;
 
 namespace botc {
-GameLog CreateGameLog() {
-  GameLog log;
-  log.set_perspective(STORYTELLER);
-
-  auto* setup = log.mutable_setup();
-  for (const auto& player : {"a", "b", "c", "d", "e"}) {
-    setup->add_players(player);
-  }
-  auto *player_roles = setup->mutable_player_roles();
-  (*player_roles)["a"] = IMP;
-  (*player_roles)["b"] = MONK;
-  (*player_roles)["c"] = SPY;
-  (*player_roles)["d"] = EMPATH;
-  (*player_roles)["e"] = VIRGIN;
-
-  return log;
-}
-
 void Run() {
-  GameState g(CreateGameLog());
+/*  GameState g = GameState::FromObserverPerspective({"P1", "P2", "P3", "P4", "P5"});
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNomination("P1", "P2");
+  g.AddVote({"P3", "P1"}, "");*/
+  GameState g = GameState::FromStorytellerPerspective(
+      {"a", "b", "c", "d", "e"},
+      {{"a", IMP}, {"b", MONK}, {"c", SPY}, {"d", EMPATH}, {"e", VIRGIN}});
 
   const char *filename = "./model.pbtxt";
 
@@ -56,7 +44,7 @@ void Run() {
   TextFormat::Print(g.SatModel().Build(), output);
   output->Flush();
   close(fd);
-  LOG(INFO) << "# worlds: " << g.CountWorlds({{"a", IMP}});
+  LOG(INFO) << "Solve response: " << g.SolveGame().DebugString();
 }
 }  // namespace botc
 

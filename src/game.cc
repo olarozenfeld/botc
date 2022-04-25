@@ -20,8 +20,6 @@
 
 namespace botc {
 
-const int kNoPlayer =  - 1;  // Used in place of player index.
-
 namespace {
 using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpSolverStatus;
@@ -33,6 +31,12 @@ using operations_research::sat::SatParameters;
 const int kNumTownsfolk[] = {3, 3, 5, 5, 5, 7, 7, 7, 9, 9, 9};
 const int kNumOutsiders[] = {0, 1, 0, 1, 2, 0, 1, 2, 0, 1, 2};
 const int kNumMinions[] = {1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3};
+const Role kAllRoles[] = {
+    WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
+    UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR,
+    BUTLER, DRUNK, RECLUSE, SAINT, POISONER, SPY, SCARLET_WOMAN, BARON,
+    IMP
+};
 const Role kGoodRoles[] = {
     WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER,
     UNDERTAKER, MONK, RAVENKEEPER, VIRGIN, SLAYER, SOLDIER, MAYOR,
@@ -45,6 +49,24 @@ const Role kTownsfolkRoles[] = {
 const Role kOutsiderRoles[] = {BUTLER, DRUNK, RECLUSE, SAINT};
 const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
 const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
+
+Setup SetupProto(absl::Span<const string> players) {
+  Setup setup;
+  for (const string& player : players) {
+    setup.add_players(player);
+  }
+  return setup;
+}
+
+Setup StorytellerSetupProto(absl::Span<const string> players,
+                            const unordered_map<string, Role>& roles,
+                            const string& red_herring) {
+  Setup setup = SetupProto(players);
+  *setup.mutable_player_roles() = google::protobuf::Map<string, Role>(
+      roles.begin(), roles.end());
+  setup.set_red_herring(red_herring);
+  return setup;
+}
 }  // namespace
 
 namespace internal {
@@ -56,6 +78,41 @@ string Time::ToString() const {
 // TODO(olaola): replace CHECKs with absl::Status everywhere.
 // TODO(olaola): fix the day poisoned bug (alive poisoner should exist).
 
+GameState GameState::FromStorytellerPerspective(
+    absl::Span<const string> players, const unordered_map<string, Role>& roles,
+    const string& red_herring) {
+  return GameState(STORYTELLER,
+                   StorytellerSetupProto(players, roles, red_herring));
+}
+
+GameState GameState::FromStorytellerPerspective(
+    absl::Span<const string> players,
+    const unordered_map<string, Role>& roles) {
+  return FromStorytellerPerspective(players, roles, "");
+}
+
+GameState GameState::FromObserverPerspective(absl::Span<const string> players) {
+  return GameState(OBSERVER, SetupProto(players));
+}
+
+GameState GameState::FromPlayerPerspective(absl::Span<const string> players) {
+  return GameState(PLAYER, SetupProto(players));
+}
+
+GameState GameState::FromProto(const GameLog& log) {
+  GameState g = GameState(log.perspective(), log.setup());
+  for (const auto& event : log.events()) {
+    g.AddEvent(event);
+  }
+  return g;
+}
+
+int GameState::PlayerIndex(const string& name) const {
+  const auto& it = player_index_.find(name);
+  CHECK(it != player_index_.end()) << "Invalid player name: " << name;
+  return it->second;
+}
+
 GameState::GameState(Perspective perspective, const Setup& setup)
     : perspective_(perspective), num_players_(setup.players_size()),
       is_alive_(num_players_, true), num_alive_(num_players_),
@@ -65,6 +122,8 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       victory_(TEAM_UNSPECIFIED), st_player_roles_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
       st_imp_pick_(kNoPlayer) {
+  CHECK_NE(perspective_, PERSPECTIVE_UNSPECIFIED)
+      << "Need to specify perspective";
   CHECK_GE(num_players_, 5);
   CHECK_LE(num_players_, 15);
   num_outsiders_ = kNumOutsiders[num_players_ - 5];
@@ -72,8 +131,6 @@ GameState::GameState(Perspective perspective, const Setup& setup)
   int player_index = 0;
   for (const auto& name : setup.players()) {
     players_.push_back(name);
-    CHECK(player_index_.find(name) == player_index_.end())
-        << "Player " << name << " is not unique";
     player_index_[name] = player_index++;
   }
 
@@ -91,21 +148,12 @@ GameState::GameState(Perspective perspective, const Setup& setup)
     const string& name = pr.first;
     CHECK_NE(pr.second, ROLE_UNSPECIFIED)
         << "Got unassigned role for player " << name;
-    const auto& it = player_index_.find(name);
-    CHECK(it != player_index_.end()) << "Invalid player name: " << name;
-    st_player_roles_[it->second] = pr.second;
+    st_player_roles_[PlayerIndex(name)] = pr.second;
   }
 
   InitRoleVars();
   InitHelperVars();
   InitRedHerring(setup.red_herring());
-}
-
-GameState::GameState(const GameLog& game_log):
-  GameState(game_log.perspective(), game_log.setup()) {
-  for (const auto& event : game_log.events()) {
-    AddEvent(event);
-  }
 }
 
 void GameState::InitRedHerring(const string& name) {
@@ -120,9 +168,7 @@ void GameState::InitRedHerring(const string& name) {
       << "Fortune teller red herring should be specified if and only if a "
       << "Fortune Teller is in play.";
   if (have_fortune_teller) {
-    const auto it = player_index_.find(name);
-    CHECK(it != player_index_.end()) << "Invalid red herring player: " << name;
-    st_red_herring_ = it->second;
+    st_red_herring_ = PlayerIndex(name);
   }
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("red_herring_%s", players_[i]);
@@ -135,7 +181,7 @@ void GameState::InitRedHerring(const string& name) {
     model_.AddImplication(v, is_evil_[i].Not())
         .WithName(absl::StrFormat("%s implies %s is good", name, players_[i]));
   }
-  BoolVar ft_in_play = NewVarRoleInPlay(FORTUNE_TELLER);
+  const BoolVar& ft_in_play = roles_in_play_[FORTUNE_TELLER];
   // If a Fortune Teller is in play, there is exactly one red herring.
   model_.AddEquality(LinearExpr::Sum(red_herring_), 1)
       .OnlyEnforceIf(ft_in_play)
@@ -146,27 +192,30 @@ void GameState::InitRedHerring(const string& name) {
       .WithName("!ft_in_play -> no red herring");
 }
 
-BoolVar GameState::NewVarRoleInPlay(Role role) {
-  string name = absl::StrFormat("in_play_%s", Role_Name(role));
-  BoolVar var = model_.NewBoolVar().WithName(name);
-  vector<BoolVar> player_is_role(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    player_is_role[i] = night_roles_[0][i][role];
-  }
-  // If roles are known, var can be fixed:
-  if (perspective_ == STORYTELLER) {
-    bool have_role = false;
-    for (Role r : st_player_roles_) {
-      if (r == role) {
-        have_role = true;
-        break;
-      }
+void GameState::InitVarRolesInPlay() {
+  roles_in_play_.push_back(model_.FalseVar());  // dummy variable
+  for (Role role : kAllRoles) {
+    string name = absl::StrFormat("in_play_%s", Role_Name(role));
+    BoolVar var = model_.NewBoolVar().WithName(name);
+    vector<BoolVar> player_is_role(num_players_);
+    for (int i = 0; i < num_players_; ++i) {
+      player_is_role[i] = night_roles_[0][i][role];
     }
-    model_.FixVariable(var, have_role);
+    roles_in_play_.push_back(var);
+    // If roles are known, var can be fixed:
+    if (perspective_ == STORYTELLER) {
+      bool have_role = false;
+      for (Role r : st_player_roles_) {
+        if (r == role) {
+          have_role = true;
+          break;
+        }
+      }
+      model_.FixVariable(var, have_role);
+    }
+    model_.AddEquality(LinearExpr::Sum(player_is_role), var)
+        .WithName(absl::StrFormat("%s definition", name));
   }
-  model_.AddEquality(LinearExpr::Sum(player_is_role), var)
-      .WithName(absl::StrFormat("%s definition", name));
-  return var;
 }
 
 void GameState::InitRoleVars() {
@@ -174,7 +223,7 @@ void GameState::InitRoleVars() {
   vector<vector<BoolVar>> night1_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
     night1_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
+    for (Role role : kAllRoles) {
       // Variable/constraint names are for debugging only.
       string name = absl::StrFormat(
         "role_%s_%s_night_1", players_[i], Role_Name(role));
@@ -187,17 +236,19 @@ void GameState::InitRoleVars() {
       Role role = st_player_roles_[i];
       const auto& pr = night1_roles[i];
       // We don't need to fix all of them, but it will be faster.
-      for (int role1 = Role_MIN + 1; role1 <= Role_MAX; ++role1) {
+      for (Role role1 : kAllRoles) {
           model_.FixVariable(pr[role1], role1 == role);
       }
     }
   }
+  InitVarRolesInPlay();
   AddRoleUniquenessConstraints(night1_roles);
   // Appropriate numbers of outsiders, townsfolk and minions:
   vector<BoolVar> minions = CollectRoles(night1_roles, kMinionRoles);
   model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
       .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
   AddBaronConstraints();
+  InitPoisonerVars();
 }
 
 void GameState::AddRoleUniquenessConstraints(
@@ -210,7 +261,10 @@ void GameState::AddRoleUniquenessConstraints(
     model_.AddExactlyOne(player_roles[i]).WithName(name);
   }
   // Each role other than IMP assigned to at most one player:
-  for (int role = Role_MIN + 1; role < Role_MAX; ++role) {
+  for (Role role : kAllRoles) {
+    if (role == IMP) {
+      continue;
+    }
     vector<BoolVar> player_is_role(num_players_);
     for (int i = 0; i < num_players_; ++i) {
       player_is_role[i] = player_roles[i][role];
@@ -226,7 +280,7 @@ void GameState::AddRoleUniquenessConstraints(
 }
 
 void GameState::AddBaronConstraints() {
-  BoolVar baron_in_play = NewVarRoleInPlay(BARON);
+  const BoolVar& baron_in_play = roles_in_play_[BARON];
   vector<BoolVar> outsiders = CollectRoles(night_roles_[0], kOutsiderRoles);
   model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_)
       .OnlyEnforceIf(baron_in_play.Not())
@@ -341,7 +395,7 @@ void GameState::InitNextNightRoleVars() {
   vector<vector<BoolVar>> night_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
     night_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
+    for (Role role : kAllRoles) {
       string name = absl::StrFormat(
         "role_%s_%s_night_%d", players_[i], Role_Name(role), cur_time_.Count);
       night_roles[i].push_back(model_.NewBoolVar().WithName(name));
@@ -364,6 +418,10 @@ void GameState::InitNextNightHelperVars() {
     imp_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   imp_pick_.push_back(imp_picks);
+  InitPoisonerVars();
+}
+
+void GameState::InitPoisonerVars() {
   vector<BoolVar> poisoner_picks;
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("poisoner_picks_%s_night_%d", players_[i],
@@ -377,7 +435,7 @@ void GameState::InitNextDayRoleVars() {
   vector<vector<BoolVar>> day_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
     day_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (int role = Role_MIN + 1; role <= Role_MAX; ++role) {
+    for (Role role : kAllRoles) {
       string name = absl::StrFormat(
         "role_%s_%s_%s", players_[i], Role_Name(role), cur_time_.ToString());
       day_roles[i].push_back(model_.NewBoolVar().WithName(name));
@@ -385,6 +443,11 @@ void GameState::InitNextDayRoleVars() {
   }
   AddRoleUniquenessConstraints(day_roles);
   day_roles_.push_back(day_roles);
+  if (cur_time_.Count == 1) {
+    // No possible starpass on night 1, roles propagate.
+    PropagateRoles(night_roles_[0], day_roles, kAllRoles);
+    return;
+  }
   // The Imp, and all Good roles except Recluse always propagate from night 1:
   PropagateRoles(night_roles_[0], day_roles, kTownsfolkRoles);
   PropagateRoles(night_roles_[0], day_roles, {BUTLER, DRUNK, SAINT});
@@ -481,6 +544,7 @@ void GameState::AddImpStarpassConstraints() {
   const auto& day_roles = day_roles_.back();
   const auto& night_roles = night_roles_.back();
   const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
+  // TODO(olaola): add Storyteller perspective, to fix st_role vars.
   // Starpass trigger: an alive, non-poisoned Imp picks themselves.
   vector<BoolVar> player_starpass;
   for (int i = 0; i < num_players_; ++i) {
@@ -641,22 +705,18 @@ void GameState::PropagateRolesForPlayer(
 
 void GameState::AddStorytellerInteraction(
     const StorytellerInteraction& interaction) {
-  auto it = player_index_.find(interaction.player());
-  CHECK(it != player_index_.end())
-      << "Invalid player " << interaction.player();
-  const int player = it->second;
   switch (interaction.details_case()) {
     case StorytellerInteraction::kShownToken:
-      AddShownToken(player, interaction.shown_token());
+      AddShownToken(interaction.player(), interaction.shown_token());
       break;
     case StorytellerInteraction::kMinionInfo:
-      AddMinionInfo(player, interaction.minion_info());
+      AddMinionInfo(interaction.player(), interaction.minion_info());
       break;
     case StorytellerInteraction::kDemonInfo:
-      AddDemonInfo(player, interaction.demon_info());
+      AddDemonInfo(interaction.player(), interaction.demon_info());
       break;
     case StorytellerInteraction::kRoleAction:
-      AddRoleAction(player, interaction.role_action());
+      AddRoleAction(interaction.player(), interaction.role_action());
       break;
     default:
       CHECK(false) << "Expected a valid interaction details, got: "
@@ -665,73 +725,79 @@ void GameState::AddStorytellerInteraction(
 }
 
 void GameState::AddNomination(const Nomination& nomination) {
+  AddNomination(nomination.nominator(), nomination.nominee());
+}
+
+void GameState::AddNomination(const string& nominator, const string& nominee) {
   CHECK(cur_time_.IsDay) << "Nominations can only occur during the day.";
-  auto it = player_index_.find(nomination.nominator());
-  CHECK(it != player_index_.end())
-      << "Invalid nominator " << nomination.nominator();
-  const int nominator = it->second;
-  it = player_index_.find(nomination.nominee());
-  CHECK(it != player_index_.end())
-      << "Invalid nominee " << nomination.nominee();
-  const int nominee = it->second;
-  CHECK(is_alive_[nominator])
-      << players_[nominator] << " is dead and cannot nominate.";
+  const int nominator_index = PlayerIndex(nominator);
+  const int nominee_index = PlayerIndex(nominee);
+  CHECK(is_alive_[nominator_index])
+      << nominator << " is dead and cannot nominate.";
   for (const auto& nom : nominations_) {
-    CHECK_NE(nom.Nominator, nominator)
-      << players_[nominator] << " has already nominated today.";
-    CHECK_NE(nom.Nominee, nominee)
-        << players_[nominee] << " has already been nominated today.";
+    CHECK_NE(nom.Nominator, nominator_index)
+      << nominator << " has already nominated today.";
+    CHECK_NE(nom.Nominee, nominee_index)
+        << nominee << " has already been nominated today.";
   }
-  nominations_.push_back({.Nominator = nominator, .Nominee = nominee});
+  nominations_.push_back(
+      {.Nominator = nominator_index, .Nominee = nominee_index});
 }
 
 void GameState::AddVote(const Vote& vote) {
+  // I should be able to use the votes repeated field as absl::Span, but I
+  // failed at that, so I'll just copy it to a vector:
+  vector<string> votes(vote.votes().begin(), vote.votes().end());
+  AddVote(votes, vote.on_the_block());
+}
+
+void GameState::AddVote(absl::Span<const string> votes,
+                        const string& on_the_block) {
   CHECK(!nominations_.empty()) << "A vote must have a preceding nomination.";
   const auto& nomination = nominations_.back();
   // TODO(olaola): validate vote correctness better!
-  for (const string& name : vote.votes()) {
-    const auto it = player_index_.find(name);
-    CHECK(it != player_index_.end()) << "Invalid voter " << name;
+  for (const string& name : votes) {
+    CHECK_NE(PlayerIndex(name), kNoPlayer) << "Invalid voter " << name;
   }
   int cur_block = kNoPlayer;
-  if (!vote.on_the_block().empty()) {
-    const auto it = player_index_.find(vote.on_the_block());
-    CHECK(it != player_index_.end()) << "Invalid execution candidate "
-                                     << vote.on_the_block();
-    cur_block = it->second;
+  if (!on_the_block.empty()) {
+    cur_block = PlayerIndex(on_the_block);
   }
-  int cur_votes = vote.votes_size();
+  int cur_votes = votes.size();
   if (on_the_block_ == kNoPlayer) {
-    int votes_required = num_votes_ == 0 ? num_alive_ / 2 : num_votes_ + 1;
+    int votes_required =
+        num_votes_ == 0 ? (num_alive_ + 1) / 2 : num_votes_ + 1;
     if (cur_votes < votes_required) {
       // Vote fails, nothing changed.
       CHECK_EQ(cur_block, on_the_block_)
           << absl::StrFormat("Needed %d votes to put %s on the block, got %d",
-                             votes_required, players_[cur_block], cur_votes);
+                             votes_required, players_[nomination.Nominee],
+                             cur_votes);
     } else {
       // Vote succeeds.
       num_votes_ = cur_votes;
       CHECK_EQ(cur_block, nomination.Nominee)
           << absl::StrFormat("%s expected to go on the block, got: %s",
-                             players_[nomination.Nominee], vote.on_the_block());
+                             players_[nomination.Nominee], on_the_block);
     }
   } else {
     if (cur_votes < num_votes_) {
       // Vote fails, nothing changed.
       CHECK_EQ(cur_block, on_the_block_)
           << absl::StrFormat("Needed %d votes to put %s on the block, got %d",
-                             num_votes_ + 1, players_[cur_block], cur_votes);
+                             num_votes_ + 1, players_[nomination.Nominee],
+                             cur_votes);
     } else if (cur_votes == num_votes_) {
       // Tied vote, no one on the block.
       CHECK_EQ(cur_block, kNoPlayer)
           << absl::StrFormat("Tied vote, no one goes on the block, got: %s",
-                             vote.on_the_block());
+                             on_the_block);
     } else {
       // Vote succeeds.
       num_votes_ = cur_votes;
       CHECK_EQ(cur_block, nomination.Nominee)
           << absl::StrFormat("%s expected to go on the block, got: %s",
-                             players_[nomination.Nominee], vote.on_the_block());
+                             players_[nomination.Nominee], on_the_block);
     }
   }
   on_the_block_ = cur_block;
@@ -750,9 +816,7 @@ void GameState::AddVote(const Vote& vote) {
 
 void GameState::AddExecution(const string& name) {
   CHECK(cur_time_.IsDay) << "Executions can only occur during the day.";
-  const auto it = player_index_.find(name);
-  CHECK(it != player_index_.end()) << "Invalid player " << name;
-  const int executee = it->second;
+  const int executee = PlayerIndex(name);
   CHECK_EQ(execution_, kNoPlayer) << "More than one execution attempted.";
   CHECK(!nominations_.empty()) << "Execution must have a preceding nomination.";
 
@@ -782,9 +846,7 @@ void GameState::AddDeath(const string& name) {
   // Deaths are Storyteller announcements of deaths, hence they only occur
   // during the day.
   CHECK(cur_time_.IsDay) << "Death annoucements can only occur during the day.";
-  const auto it = player_index_.find(name);
-  CHECK(it != player_index_.end()) << "Invalid player " << name;
-  const int death = it->second;
+  const int death = PlayerIndex(name);
   CHECK(is_alive_[death]) << "What is dead may never die: " << name;
   // Deaths are either an announced night death, Slayer shots, or executions,
   // in that order.
@@ -821,7 +883,19 @@ void GameState::AddDeath(const string& name) {
   --num_alive_;
 }
 
+void GameState::AddClaim(const string& player, Role role) {
+}
+
+void GameState::AddClaim(const string& player,
+    Role role, const RoleAction& info) {
+}
+
 void GameState::AddClaim(const Claim& claim) {
+  if (claim.has_info()) {
+    AddClaim(claim.player(), claim.role(), claim.info());
+  } else {
+    AddClaim(claim.player(), claim.role());
+  }
 }
 
 void GameState::AddVictory(Team victory) {
@@ -837,16 +911,22 @@ void GameState::AddVictory(Team victory) {
   }
 }
 
-void GameState::AddShownToken(int player, Role role) {
+void GameState::AddShownToken(const string& player, Role role) {
+//  const int pi = PlayerIndex(player);
 }
 
-void GameState::AddMinionInfo(int player, const MinionInfo& minion_info) {
+void GameState::AddMinionInfo(const string& player,
+                              const MinionInfo& minion_info) {
+//  const int pi = PlayerIndex(player);
 }
 
-void GameState::AddDemonInfo(int player, const DemonInfo& demon_info) {
+void GameState::AddDemonInfo(const string& player,
+                             const DemonInfo& demon_info) {
+//  const int pi = PlayerIndex(player);
 }
 
-void GameState::AddRoleAction(int player, const RoleAction& role_action) {
+void GameState::AddRoleAction(const string& player,
+                              const RoleAction& role_action) {
   switch (role_action.details_case()) {
     case RoleAction::kWasherwomanInfo:
       AddWasherwomanInfo(player, role_action.washerwoman_info());
@@ -897,50 +977,53 @@ void GameState::AddRoleAction(int player, const RoleAction& role_action) {
 }
 
 void GameState::AddWasherwomanInfo(
-    int player, const LearnRoleInfo& washerwoman_info) {
+    const string& player, const LearnRoleInfo& washerwoman_info) {
 }
 
 void GameState::AddLibrarianInfo(
-    int player, const LearnRoleInfo& librarian_info) {
+    const string& player, const LearnRoleInfo& librarian_info) {
 }
 
 void GameState::AddInvestigatorInfo(
-    int player, const LearnRoleInfo& investigator_info) {
+    const string& player, const LearnRoleInfo& investigator_info) {
 }
 
-void GameState::AddChefInfo(int player, int chef_info) {
+void GameState::AddChefInfo(const string& player, int chef_info) {
 }
 
-void GameState::AddEmpathInfo(int player, int empath_info) {
+void GameState::AddEmpathInfo(const string& player, int empath_info) {
 }
 
 void GameState::AddFortuneTellerAction(
-    int player, const FortuneTellerAction& fortuneteller_action) {
+    const string& player, const FortuneTellerAction& fortuneteller_action) {
 }
 
-void GameState::AddMonkAction(int player, string monk_action) {
+void GameState::AddMonkAction(const string& player, const string& monk_action) {
 }
 
-void GameState::AddButlerAction(int player, string butler_action) {
+void GameState::AddButlerAction(const string& player,
+                                const string& butler_action) {
 }
 
 void GameState::AddRavenkeeperInfo(
-    int player, const RavenkeeperInfo& ravenkeeper_info) {
+    const string& player, const RavenkeeperInfo& ravenkeeper_info) {
 }
 
-void GameState::AddUndertakerInfo(int player, Role undertaker_info) {
+void GameState::AddUndertakerInfo(const string& player, Role undertaker_info) {
 }
 
-void GameState::AddSlayerAction(int player, string slayer_action) {
+void GameState::AddSlayerAction(const string& player,
+                                const string& slayer_action) {
 }
 
-void GameState::AddPoisonerAction(int player, string poisoner_action) {
+void GameState::AddPoisonerAction(const string& player,
+                                  const string& poisoner_action) {
 }
 
-void GameState::AddImpAction(int player, string imp_action) {
+void GameState::AddImpAction(const string& player, const string& imp_action) {
 }
 
-void GameState::AddSpyInfo(int player, const SpyInfo& spy_info) {
+void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
 }
 
 void GameState::AddGoodWonConstraints() {
@@ -1043,37 +1126,89 @@ void GameState::AddGameNotOverConstraints() {
   }
 }
 
-bool GameState::IsValid() const {
-  const CpSolverResponse response = Solve(model_.Build());
-  LOG(INFO) << "response: " << response.DebugString();
-  CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
-  CHECK(response.status() != CpSolverStatus::UNKNOWN);
-  return (response.status() == CpSolverStatus::OPTIMAL ||
-      response.status() == CpSolverStatus::FEASIBLE);
+SolverRequest FromPlayerRoles(const unordered_map<string, Role>& player_roles) {
+  SolverRequest request;
+  for (const auto& it : player_roles) {
+    auto *pr = request.mutable_assumptions()->add_roles();
+    pr->set_player(it.first);
+    pr->set_role(it.second);
+  }
+  request.set_stop_after_first_solution(true);
+  return request;
 }
 
-int GameState::CountWorlds(
-    const unordered_map<string, Role>& assumptions) {
-  vector<BoolVar> assumption_literals;
-  for (const auto& it : assumptions) {
-    const auto pit = player_index_.find(it.first);
-    CHECK(pit != player_index_.end()) << "Invalid player name: " << it.first;
-    int player = pit->second;
-    const auto& current_roles = cur_time_.IsDay ? day_roles_ : night_roles_;
-    assumption_literals.push_back(current_roles.back()[player][it.second]);
+SolverResponse GameState::ValidWorld(
+    const unordered_map<string, Role>& player_roles) const {
+  SolverRequest request = FromPlayerRoles(player_roles);
+  request.set_stop_after_first_solution(true);
+  return SolveGame(request);
+}
+
+SolverResponse GameState::SolveGame() const {
+  return SolveGame(SolverRequest());
+}
+
+SolverResponse GameState::SolveGame(
+    const unordered_map<string, Role>& player_roles) const {
+  SolverRequest request;
+  for (const auto& it : player_roles) {
+    auto *pr = request.mutable_assumptions()->add_roles();
+    pr->set_player(it.first);
+    pr->set_role(it.second);
   }
-  model_.AddAssumptions(assumption_literals);
-  SatParameters parameters;
-  parameters.set_search_branching(SatParameters::FIXED_SEARCH);
-  parameters.set_enumerate_all_solutions(true);
-  Model model;
-  model.Add(NewSatParameters(parameters));
-  int result = 0;
-  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
-      ++result;
-  }));
-  SolveCpModel(model_.Build(), &model);
-  model_.ClearAssumptions();
+  return SolveGame(request);
+}
+
+// This function will be very slow in low-info game states. Consider adding
+// more assumptions for these cases.
+SolverResponse GameState::SolveGame(const SolverRequest& request) const {
+  SolverResponse result;
+  CpModelBuilder model(model_);  // Making a copy to add assumptions repeatedly.
+  const auto& current_roles =
+    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
+  vector<BoolVar> assumption_literals;
+  for (const auto& pr : request.assumptions().roles()) {
+    const int player = PlayerIndex(pr.player());
+    const auto& v = current_roles[player][pr.role()];
+    assumption_literals.push_back(pr.is_not() ? v.Not() : v);
+  }
+  for (int role : request.assumptions().roles_in_play()) {
+    assumption_literals.push_back(roles_in_play_[role]);
+  }
+  for (int role : request.assumptions().roles_not_in_play()) {
+    assumption_literals.push_back(roles_in_play_[role].Not());
+  }
+  model.AddAssumptions(assumption_literals);
+  CpSolverResponse response;
+  while (true) {
+    response = Solve(model.Build());
+    CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
+    CHECK(response.status() != CpSolverStatus::UNKNOWN);
+    if (response.status() == CpSolverStatus::INFEASIBLE) {
+      break;
+    }
+    // Translate the response back to role assignment.
+    auto world = result.add_worlds();
+    auto* roles = world->mutable_roles();
+    vector<BoolVar> inverted;
+    for (int i = 0; i < num_players_; ++i) {
+      for (Role role : kAllRoles) {
+        if (SolutionIntegerValue(response, current_roles[i][role])) {
+          inverted.push_back(current_roles[i][role].Not());
+          const string player = players_[i];
+          CHECK(roles->find(player) == roles->end())
+              << "Double role assignment for player " << player;
+          (*roles)[player] = role;
+        }
+      }
+    }
+    CHECK_EQ(roles->size(), num_players_) << "Not all players assigned roles.";
+    if (request.stop_after_first_solution()) {
+      break;
+    }
+    // Limit further solutions to different role assignments:
+    model.AddBoolOr(inverted);  // At least one literal is different.
+  }
   return result;
 }
 }  // namespace botc

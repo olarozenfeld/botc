@@ -1,0 +1,51 @@
+// Copyright 2022 Ola Rozenfeld
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package botc;
+
+import "src/game_log.proto";
+
+message SolverRequest {
+  message Assumptions {
+    message PlayerRole {
+      string player = 1;
+      Role role = 2;
+      bool is_not = 3;  // True iff player does not have role.
+    }
+    repeated PlayerRole roles = 1;
+    repeated Role roles_in_play = 2;
+    repeated Role roles_not_in_play = 3;
+  }
+  // Additional assumptions to add into the model before solving.
+  Assumptions assumptions = 1;
+
+  // If set, at most one world will be returned.
+  bool stop_after_first_solution = 2;
+
+  // If set, will count all possible boolean assignments for each world.
+  // Note this might slow down the solver considerably!
+  bool count_sub_worlds = 3;
+}
+
+message SolverResponse {
+  message World {
+    // Fully specified player roles in an assignment.
+    map<string, Role> roles = 1;
+
+    // When specified, number of worlds with this assignment.
+    int64 count = 2;
+  }
+  repeated World worlds = 1;
+}
