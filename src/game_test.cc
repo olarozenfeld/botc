@@ -115,16 +115,19 @@ TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
   EXPECT_EQ(g.SolveGame().worlds_size(), 0);
 }
 
-unordered_map<string, Role> CopyWorld(const SolverResponse r, int index) {
-  unordered_map<string, Role> world(
-      r.worlds(index).roles().begin(), r.worlds(index).roles().end());
-  return world;
+vector<unordered_map<string, Role>> CopyWorlds(const SolverResponse& r) {
+  vector<unordered_map<string, Role>> result;
+  for (const auto& w : r.worlds()) {
+    unordered_map<string, Role> world(w.roles().begin(), w.roles().end());
+    result.push_back(world);
+  }
+  return result;
 }
 
 // Nasty hack -- I should write a gMock matcher for this instead, especially
 // to compare multiple worlds unordered.
-#define EXPECT_WORLD_EQ(r, i, w) \
-    EXPECT_THAT(CopyWorld(r, i), testing::Eq(unordered_map<string, Role>(w)))
+#define EXPECT_WORLDS_EQ(r, w) \
+    EXPECT_THAT(CopyWorlds(r), testing::UnorderedElementsAreArray(w))
 
 TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
@@ -140,11 +143,10 @@ TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   g.AddClaim("P1", LIBRARIAN);  // Evil team lie
   g.AddClaim("P2", SLAYER);
   SolverResponse r = g.SolveGame();
-  EXPECT_EQ(r.worlds_size(), 1);
-  unordered_map<string, Role> expected_world({
-      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", BUTLER},
-      {"P6", WASHERWOMAN}, {"P7", MONK}});
-  EXPECT_WORLD_EQ(r, 0, expected_world);
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", BUTLER},
+       {"P6", WASHERWOMAN}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
@@ -161,23 +163,16 @@ TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
   g.AddClaim("P1", LIBRARIAN);  // Evil team lie
   g.AddClaim("P2", SLAYER);
   SolverResponse r = g.SolveGame();
-  EXPECT_EQ(r.worlds_size(), 4);
-  unordered_map<string, Role> expected_world({
-      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
-      {"P6", WASHERWOMAN}, {"P7", DRUNK}});
-  EXPECT_WORLD_EQ(r, 0, expected_world);
-  expected_world = {
-      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
-      {"P6", DRUNK}, {"P7", MONK}};
-  EXPECT_WORLD_EQ(r, 1, expected_world);
-  expected_world = {
-      {"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", SAINT}, {"P5", MAYOR},
-      {"P6", WASHERWOMAN}, {"P7", MONK}};
-  EXPECT_WORLD_EQ(r, 2, expected_world);
-  expected_world = {
-      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", DRUNK},
-      {"P6", WASHERWOMAN}, {"P7", MONK}};
-  EXPECT_WORLD_EQ(r, 3, expected_world);
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
+       {"P6", WASHERWOMAN}, {"P7", DRUNK}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
+       {"P6", DRUNK}, {"P7", MONK}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", SAINT}, {"P5", MAYOR},
+       {"P6", WASHERWOMAN}, {"P7", MONK}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", DRUNK},
+       {"P6", WASHERWOMAN}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
@@ -194,11 +189,10 @@ TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
   g.AddClaim("P1", EMPATH);  // Evil team lie
   g.AddClaim("P2", SLAYER);
   SolverResponse r = g.SolveGame();
-  EXPECT_EQ(r.worlds_size(), 1);
-  unordered_map<string, Role> expected_world({
-      {"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
-      {"P5", SOLDIER}, {"P6", WASHERWOMAN}, {"P7", MONK}});
-  EXPECT_WORLD_EQ(r, 0, expected_world);
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SOLDIER}, {"P6", WASHERWOMAN}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
@@ -212,23 +206,16 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", SOLDIER);
   SolverResponse r = g.SolveGame();
-  EXPECT_EQ(r.worlds_size(), 4);
-  unordered_map<string, Role> expected_world({
-      {"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", VIRGIN},
-      {"P5", IMP}});
-  EXPECT_WORLD_EQ(r, 0, expected_world);
-  expected_world = {
-      {"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", IMP},
-      {"P5", SOLDIER}};
-  EXPECT_WORLD_EQ(r, 1, expected_world);
-  expected_world = {
-      {"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
-      {"P5", SOLDIER}};
-  EXPECT_WORLD_EQ(r, 2, expected_world);
-  expected_world = {
-      {"P1", POISONER}, {"P2", SLAYER}, {"P3", IMP}, {"P4", VIRGIN},
-      {"P5", SOLDIER}};
-  EXPECT_WORLD_EQ(r, 3, expected_world);
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", IMP}},
+      {{"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", IMP},
+       {"P5", SOLDIER}},
+      {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SOLDIER}},
+      {{"P1", POISONER}, {"P2", SLAYER}, {"P3", IMP}, {"P4", VIRGIN},
+       {"P5", SOLDIER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
 // To test: failing votes, succeeding votes, block replacements,
