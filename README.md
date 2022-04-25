@@ -16,9 +16,9 @@ bazel-bin/src/botc --game_log=src/examples/game1_st.pbtxt
 bazel-bin/src/botc --game_log=src/examples/game1_st.pbtxt --output_solution=solution.pbtxt
 ```
 
-To provide additional solver parameters (see solver.proto for options), use the `--solver_parameters` flag (also a file path to the parameters in protobuf text format).
+To provide additional solver parameters (see [solver.proto](https://github.com/olarozenfeld/botc/blob/master/src/solver.proto) for options), use the `--solver_parameters` flag (also a file path to the parameters in protobuf text format).
 
-TODO(olaola): expose common solver options (e.g. `--solve_for_demon`) as flags.
+*TODO(olaola):* expose common solver options (e.g. `--solve_for_demon`) as flags.
 
 To dump the SAT model into a file, use the `--output_model` flag:
 
