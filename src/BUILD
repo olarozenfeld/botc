@@ -50,6 +50,7 @@ cc_binary(
     srcs = ["botc_main.cc"],
     deps = [
         ":game_lib",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_protobuf//:protobuf",
     ],
 )

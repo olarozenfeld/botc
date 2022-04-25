@@ -4,7 +4,27 @@ This repository contains a solver for some simple strategies for the [Blood On T
 
 ## Usage
 
-TBD
+The main binary takes a game log as input in the protobuf text format, calls the solver, and outputs the solution (also in protobuf text format) to STDERR or optionally to a file.
+
+Examples:
+
+```
+bazel-bin/src/botc --game_log=src/examples/game1_st.pbtxt
+```
+
+```
+bazel-bin/src/botc --game_log=src/examples/game1_st.pbtxt --output_solution=solution.pbtxt
+```
+
+To provide additional solver parameters (see solver.proto for options), use the `--solver_parameters` flag (also a file path to the parameters in protobuf text format).
+
+TODO(olaola): expose common solver options (e.g. `--solve_for_demon`) as flags.
+
+To dump the SAT model into a file, use the `--output_model` flag:
+
+```
+bazel-bin/src/botc --game_log=src/examples/game1_st.pbtxt --output_model=model.pbtxt
+```
 
 ## Development
 
