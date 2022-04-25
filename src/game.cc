@@ -49,6 +49,8 @@ const Role kTownsfolkRoles[] = {
 const Role kOutsiderRoles[] = {BUTLER, DRUNK, RECLUSE, SAINT};
 const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
 const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
+const Role kNonTownsfolkRoles[] = {
+    BUTLER, DRUNK, RECLUSE, SAINT, POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
 
 Setup SetupProto(absl::Span<const string> players) {
   Setup setup;
@@ -66,6 +68,15 @@ Setup StorytellerSetupProto(absl::Span<const string> players,
       roles.begin(), roles.end());
   setup.set_red_herring(red_herring);
   return setup;
+}
+
+bool IsMinionRole(Role role) {
+  for (Role r : kMinionRoles) {
+    if (r == role) {
+      return true;
+    }
+  }
+  return false;
 }
 }  // namespace
 
@@ -119,7 +130,10 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       num_votes_(0), on_the_block_(kNoPlayer), execution_(kNoPlayer),
       execution_death_(kNoPlayer), slayer_death_(kNoPlayer),
       night_death_(kNoPlayer), game_maybe_over_(false),
-      victory_(TEAM_UNSPECIFIED), st_player_roles_(num_players_),
+      victory_(TEAM_UNSPECIFIED), claimed_roles_(num_players_),
+      perspective_player_(kNoPlayer),
+      perspective_player_shown_token_(ROLE_UNSPECIFIED),
+      st_player_roles_(num_players_), st_shown_tokens_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
       st_imp_pick_(kNoPlayer) {
   CHECK_NE(perspective_, PERSPECTIVE_UNSPECIFIED)
@@ -151,8 +165,8 @@ GameState::GameState(Perspective perspective, const Setup& setup)
     st_player_roles_[PlayerIndex(name)] = pr.second;
   }
 
-  InitRoleVars();
-  InitHelperVars();
+  InitNightRoleVars();
+  InitIsEvilVars();
   InitRedHerring(setup.red_herring());
 }
 
@@ -218,37 +232,49 @@ void GameState::InitVarRolesInPlay() {
   }
 }
 
-void GameState::InitRoleVars() {
-  // night1_roles[i][role] is true iff player players_[i] has role.
-  vector<vector<BoolVar>> night1_roles(num_players_);
+void GameState::InitNightRoleVars() {
+  if (cur_time_.Count == 1) {
+    return;  // We initialize night 1 role variables during setup.
+  }
+  vector<vector<BoolVar>> night_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
-    night1_roles[i].push_back(model_.FalseVar());  // dummy variable
+    night_roles[i].push_back(model_.FalseVar());  // dummy variable
     for (Role role : kAllRoles) {
       // Variable/constraint names are for debugging only.
       string name = absl::StrFormat(
         "role_%s_%s_night_1", players_[i], Role_Name(role));
-      night1_roles[i].push_back(model_.NewBoolVar().WithName(name));
+      night_roles[i].push_back(model_.NewBoolVar().WithName(name));
     }
   }
-  night_roles_.push_back(night1_roles);
-  if (perspective_ == STORYTELLER) {
-    for (int i = 0; i < num_players_; ++i) {
-      Role role = st_player_roles_[i];
-      const auto& pr = night1_roles[i];
-      // We don't need to fix all of them, but it will be faster.
-      for (Role role1 : kAllRoles) {
-          model_.FixVariable(pr[role1], role1 == role);
+  night_roles_.push_back(night_roles);
+  AddRoleUniquenessConstraints(night_roles);
+  if (cur_time_.Count == 0) {
+    InitShownTokenVars();
+    InitVarRolesInPlay();
+    InitIsEvilVars();
+    // Appropriate numbers of outsiders, townsfolk and minions:
+    vector<BoolVar> minions = CollectRoles(night_roles, kMinionRoles);
+    model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
+        .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
+    AddBaronConstraints();
+    InitPoisonerVars();
+    if (perspective_ == STORYTELLER) {
+      for (int i = 0; i < num_players_; ++i) {
+        Role role = st_player_roles_[i];
+        const auto& pr = night_roles[i];
+        // We don't need to fix all of them, but it will be faster.
+        for (Role role1 : kAllRoles) {
+            model_.FixVariable(pr[role1], role1 == role);
+        }
       }
     }
+  } else {
+    // The Good roles propagate from night 1:
+    PropagateRoles(night_roles_[0], night_roles, kGoodRoles);
+    // All Evil roles except Scarlet Woman & Imp propagate from previous day:
+    PropagateRoles(day_roles_.back(), night_roles, {POISONER, SPY, BARON});
+    AddScarletWomanConstraints();
   }
-  InitVarRolesInPlay();
-  AddRoleUniquenessConstraints(night1_roles);
-  // Appropriate numbers of outsiders, townsfolk and minions:
-  vector<BoolVar> minions = CollectRoles(night1_roles, kMinionRoles);
-  model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
-      .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
-  AddBaronConstraints();
-  InitPoisonerVars();
 }
 
 void GameState::AddRoleUniquenessConstraints(
@@ -302,18 +328,68 @@ void GameState::AddBaronConstraints() {
         absl::StrFormat("baron_in_play -> %d townsfolk", num_townsfolk - 2));
 }
 
-void GameState::InitHelperVars() {
+void GameState::InitShownTokenVars() {
+  for (int i = 0; i < num_players_; ++i) {
+    vector<BoolVar> shown_token;
+    shown_token.push_back(model_.FalseVar());  // dummy variable
+    for (Role role : kAllRoles) {
+      const string name = absl::StrFormat("shown_token_%s_%s",
+                                          players_[i], Role_Name(role));
+      shown_token.push_back(model_.NewBoolVar().WithName(name));
+    }
+    shown_token_.push_back(shown_token);
+    // Every player was shown exactly one token:
+    model_.AddExactlyOne(shown_token);
+    // No one is shown the DRUNK token:
+    model_.FixVariable(shown_token[DRUNK], false);
+  }
+  // All shown tokens are unique:
+  for (Role role : kAllRoles) {
+    vector<BoolVar> shown_role;
+    for (int i = 0; i < num_players_; ++i) {
+      shown_role.push_back(shown_token_[i][role]);
+    }
+    const string name = absl::StrFormat("Shown token %s to at most one player",
+                                        Role_Name(role));
+    model_.AddAtMostOne(shown_role).WithName(name);
+    if (role == IMP) {
+      // Exactly one player is shown the Imp.
+      model_.AddExactlyOne(shown_role).WithName("One player is shown IMP");
+    }
+  }
+  const auto& assigned_roles = night_roles_[0];
+  for (int i = 0; i < num_players_; ++i) {
+    // Being shown a townsfolk role means you either are that role, or DRUNK.
+    for (Role role : kTownsfolkRoles) {
+      model_.AddBoolOr({assigned_roles[i][role], assigned_roles[i][DRUNK]})
+            .OnlyEnforceIf(shown_token_[i][role])
+            .WithName(absl::StrFormat("%s -> %s V %s",
+                                      shown_token_[i][role].Name(),
+                                      assigned_roles[i][role].Name(),
+                                      assigned_roles[i][DRUNK].Name()));
+    }
+    // Being shown any other role means you are that role.
+    for (Role role : kNonTownsfolkRoles) {
+      model_.AddImplication(shown_token_[i][role], assigned_roles[i][role])
+            .WithName(absl::StrFormat("%s -> %s",
+                                      shown_token_[i][role].Name(),
+                                      assigned_roles[i][role].Name()));
+    }
+  }
+}
+
+void GameState::InitIsEvilVars() {
   // A Player is Evil iff they have an Evil role on Night 1 (in TB).
   for (int i = 0; i < num_players_; ++i) {
     BoolVar is_evil = model_.NewBoolVar()
-        .WithName(absl::StrFormat("Evil_%s", players_[i]));
+        .WithName(absl::StrFormat("evil_%s", players_[i]));
     is_evil_.push_back(is_evil);
     vector<BoolVar> evil_roles;
     for (int role : kEvilRoles) {
       evil_roles.push_back(night_roles_[0][i][role]);
     }
     model_.AddEquality(LinearExpr::Sum(evil_roles), is_evil)
-        .WithName(absl::StrFormat("Evil_%s definition", players_[i]));
+        .WithName(absl::StrFormat("evil_%s definition", players_[i]));
   }
 }
 
@@ -364,8 +440,7 @@ void GameState::AddDay(int count) {
   cur_time_.IsDay = true;
   CHECK_EQ(count, cur_time_.Count) << absl::StrFormat(
       "Day %d needs to follow night %d", cur_time_.Count, cur_time_.Count);
-  InitNextDayRoleVars();
-  InitNextDayHelperVars();
+  InitDayRoleVars();
   nominations_.clear();
   slayer_shots_.clear();
   num_votes_ = 0;
@@ -385,32 +460,13 @@ void GameState::AddNight(int count) {
   CHECK_EQ(count, cur_time_.Count + 1) << absl::StrFormat(
       "Night %d needs to follow day %d", cur_time_.Count + 1, cur_time_.Count);
   cur_time_.Count++;
-  InitNextNightRoleVars();
-  InitNextNightHelperVars();  // In particular, imp and poisoner picks.
+  InitNightRoleVars();
+  InitPoisonerVars();
+  InitImpVars();
   night_death_ = st_poisoner_pick_ = st_imp_pick_ = kNoPlayer;
 }
 
-// Assumption: called only on Night > 1.
-void GameState::InitNextNightRoleVars() {
-  vector<vector<BoolVar>> night_roles(num_players_);
-  for (int i = 0; i < num_players_; ++i) {
-    night_roles[i].push_back(model_.FalseVar());  // dummy variable
-    for (Role role : kAllRoles) {
-      string name = absl::StrFormat(
-        "role_%s_%s_night_%d", players_[i], Role_Name(role), cur_time_.Count);
-      night_roles[i].push_back(model_.NewBoolVar().WithName(name));
-    }
-  }
-  AddRoleUniquenessConstraints(night_roles);
-  night_roles_.push_back(night_roles);
-  // The Good roles propagate from night 1:
-  PropagateRoles(night_roles_[0], night_roles, kGoodRoles);
-  // All Evil roles except Scarlet Woman & Imp propagate from the previous day:
-  PropagateRoles(day_roles_.back(), night_roles, {POISONER, SPY, BARON});
-  AddScarletWomanConstraints();
-}
-
-void GameState::InitNextNightHelperVars() {
+void GameState::InitImpVars() {
   vector<BoolVar> imp_picks;
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("imp_picks_%s_night_%d", players_[i],
@@ -418,20 +474,19 @@ void GameState::InitNextNightHelperVars() {
     imp_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   imp_pick_.push_back(imp_picks);
-  InitPoisonerVars();
 }
 
 void GameState::InitPoisonerVars() {
   vector<BoolVar> poisoner_picks;
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("poisoner_picks_%s_night_%d", players_[i],
-                                  cur_time_.Count);
+                                  (cur_time_.Count == 0 ? 1 : cur_time_.Count));
     poisoner_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   poisoner_pick_.push_back(poisoner_picks);
 }
 
-void GameState::InitNextDayRoleVars() {
+void GameState::InitDayRoleVars() {
   vector<vector<BoolVar>> day_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
     day_roles[i].push_back(model_.FalseVar());  // dummy variable
@@ -453,9 +508,6 @@ void GameState::InitNextDayRoleVars() {
   PropagateRoles(night_roles_[0], day_roles, {BUTLER, DRUNK, SAINT});
   // The Minions and Recluse can catch a starpass.
   AddImpStarpassConstraints();
-}
-
-void GameState::InitNextDayHelperVars() {
 }
 
 void GameState::AddScarletWomanConstraints() {
@@ -884,18 +936,160 @@ void GameState::AddDeath(const string& name) {
 }
 
 void GameState::AddClaim(const string& player, Role role) {
-}
-
-void GameState::AddClaim(const string& player,
-    Role role, const RoleAction& info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  // The open strategy assumes that only Evil lies. Hence:
+  // claim_role_X -> shown_token_X V is_evil
+  // The only exception is a Recluse Imp claim after a Recluse starpass (which
+  // still technically means they were shown the Imp token upon starpass, but we
+  // only encode the night 1 shown tokens).
+  const int p_index = PlayerIndex(player);
+  claimed_roles_[p_index] = role;
+  if (role == IMP) {
+    // Recluse starpass exception. Someone claiming Imp is either currently
+    // the Good Imp, or some sort of starting Evil.
+    model_.AddBoolOr({day_roles_.back()[p_index][role], is_evil_[p_index]});
+    return;
+  }
+  model_.AddBoolOr({shown_token_[p_index][role], is_evil_[p_index]});
 }
 
 void GameState::AddClaim(const Claim& claim) {
-  if (claim.has_info()) {
-    AddClaim(claim.player(), claim.role(), claim.info());
-  } else {
-    AddClaim(claim.player(), claim.role());
+  const string& player = claim.player();
+  if (!claim.has_info()) {
+    AddClaim(player, claim.role());
+    return;
   }
+  switch (claim.info().details_case()) {
+    case RoleAction::kWasherwomanInfo:
+      AddClaim(player, WASHERWOMAN);
+      AddClaimWasherwomanInfo(player, claim.info().washerwoman_info());
+      break;
+    case RoleAction::kLibrarianInfo:
+      AddClaim(player, LIBRARIAN);
+      AddClaimLibrarianInfo(player, claim.info().librarian_info());
+      break;
+    case RoleAction::kInvestigatorInfo:
+      AddClaim(player, INVESTIGATOR);
+      AddClaimInvestigatorInfo(player, claim.info().investigator_info());
+      break;
+    case RoleAction::kChefInfo:
+      AddClaim(player, CHEF);
+      AddClaimChefInfo(player, claim.info().chef_info());
+      break;
+    case RoleAction::kEmpathInfo:
+      AddClaim(player, EMPATH);
+      AddClaimEmpathInfo(player, claim.info().empath_info());
+      break;
+    case RoleAction::kFortunetellerAction:
+      AddClaim(player, FORTUNE_TELLER);
+      AddClaimFortuneTellerAction(player, claim.info().fortuneteller_action());
+      break;
+    case RoleAction::kMonkAction:
+      AddClaim(player, MONK);
+      AddClaimMonkAction(player, claim.info().monk_action());
+      break;
+    case RoleAction::kButlerAction:
+      AddClaim(player, BUTLER);
+      AddClaimButlerAction(player, claim.info().butler_action());
+      break;
+    case RoleAction::kRavenkeeperInfo:
+      AddClaim(player, RAVENKEEPER);
+      AddClaimRavenkeeperInfo(player, claim.info().ravenkeeper_info());
+      break;
+    case RoleAction::kUndertakerInfo:
+      AddClaim(player, UNDERTAKER);
+      AddClaimUndertakerInfo(player, claim.info().undertaker_info());
+      break;
+    case RoleAction::kSlayerAction:
+      AddClaim(player, SLAYER);
+      AddClaimSlayerAction(player, claim.info().slayer_action());
+      break;
+    case RoleAction::kPoisonerAction:
+      AddClaim(player, POISONER);
+      AddClaimPoisonerAction(player, claim.info().poisoner_action());
+      break;
+    case RoleAction::kImpAction:
+      AddClaim(player, IMP);
+      AddClaimImpAction(player, claim.info().imp_action());
+      break;
+    case RoleAction::kSpyInfo:
+      AddClaim(player, SPY);
+      AddClaimSpyInfo(player, claim.info().spy_info());
+      break;
+    default:
+      CHECK(false) << "Expected a valid claim info details, got: "
+                   << claim.info().details_case();
+  }
+}
+
+void GameState::AddClaimWasherwomanInfo(
+    const string& player, const LearnRoleInfo& washerwoman_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimLibrarianInfo(
+    const string& player, const LearnRoleInfo& librarian_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimInvestigatorInfo(
+    const string& player, const LearnRoleInfo& investigator_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimChefInfo(const string& player, int chef_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimFortuneTellerAction(
+    const string& player, const FortuneTellerAction& fortuneteller_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimMonkAction(const string& player,
+                                   const string& monk_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimButlerAction(const string& player,
+                                     const string& butler_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimRavenkeeperInfo(
+    const string& player, const RavenkeeperInfo& ravenkeeper_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimUndertakerInfo(const string& player,
+                                       Role undertaker_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+void GameState::AddClaimSlayerAction(const string& player,
+                                     const string& slayer_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+// The open Spy play.
+void GameState::AddClaimSpyInfo(const string& player, const SpyInfo& spy_info) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+// This one are quite useless for Evil, here for completeness:
+void GameState::AddClaimPoisonerAction(const string& player,
+                            const string& poisoner_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+}
+
+// Useless, but yay theoretically occur after Recluse starpass.
+void GameState::AddClaimImpAction(const string& player,
+                                  const string& imp_action) {
+  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
 }
 
 void GameState::AddVictory(Team victory) {
@@ -912,17 +1106,106 @@ void GameState::AddVictory(Team victory) {
 }
 
 void GameState::AddShownToken(const string& player, Role role) {
-//  const int pi = PlayerIndex(player);
+  CHECK_NE(role, ROLE_UNSPECIFIED) << "Need to specify a role";
+  CHECK_NE(role, DRUNK) << "No one can be shown the DRUNK token";
+  CHECK_NE(perspective_, OBSERVER) << "Observer cannot be shown tokens";
+  CHECK(!cur_time_.IsDay) << "Tokens are only shown at night";
+  CHECK(cur_time_.Count == 1 || role == IMP)
+      << "Tokens other than Imp are only shown on night 1";
+  const int p_index = PlayerIndex(player);
+  if (perspective_ == STORYTELLER) {
+    // TODO(olaola): validate role change.
+    st_shown_tokens_[p_index] = role;
+  } else {  // PLAYER
+    CHECK(perspective_player_ == kNoPlayer || perspective_player_ == p_index)
+        << "Only " << player << " can be shown a token in player perspective";
+    perspective_player_ = p_index;  // Deducing the perspective player.
+    // TODO(olaola): validate role change.
+    perspective_player_shown_token_ = role;
+  }
+  if (cur_time_.Count == 1) {
+    model_.AddEquality(shown_token_[p_index][role], model_.TrueVar())
+          .WithName(absl::StrFormat("%s shown token %s night 1", player,
+                                    Role_Name(role)));
+  } else {  // role is IMP
+    // TODO(olaola): fill this case (starpass occurred).
+  }
+}
+
+Role GameState::ShownToken(const string& player) const {
+  switch (perspective_) {
+    case OBSERVER:
+      return ROLE_UNSPECIFIED;
+    case PLAYER:
+      return perspective_player_shown_token_;
+    case STORYTELLER:
+      return st_shown_tokens_[PlayerIndex(player)];
+    default:
+      CHECK(false) << "Invalid game state: unset perspective";
+  }
 }
 
 void GameState::AddMinionInfo(const string& player,
                               const MinionInfo& minion_info) {
-//  const int pi = PlayerIndex(player);
+  CHECK_GE(num_players_, 7) << "Minion info unavailable for < 7 players";
+  CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
+      << "Minion info can only be shown in player or storyteller perspective";
+  CHECK(!cur_time_.IsDay && cur_time_.Count == 1)
+      << "Minion info is only shown on night 1";
+  const int p_index = PlayerIndex(player);
+  Role shown_token = perspective_ == STORYTELLER
+      ? st_shown_tokens_[p_index] : perspective_player_shown_token_;
+  CHECK(IsMinionRole(shown_token))
+      << "Player " << player
+      << " needs to be shown a minion token in order to get minion info";
+  // Minion info is always correct in TB:
+  const auto& assigned_roles = night_roles_[0];
+  const int demon = PlayerIndex(minion_info.demon());
+  model_.AddEquality(assigned_roles[demon][IMP], model_.TrueVar())
+        .WithName(absl::StrFormat("%s learns minion info: %s is the demon",
+                                  player, minion_info.demon()));
+  for (const string& minion_name : minion_info.minions()) {
+    vector<BoolVar> minion_i;
+    for (Role role : kMinionRoles) {
+      if (role != shown_token) {  // they are a different minion
+        minion_i.push_back(assigned_roles[PlayerIndex(minion_name)][role]);
+      }
+    }
+    model_.AddExactlyOne(minion_i)
+          .WithName(absl::StrFormat("%s learns minion info: %s is a minion",
+                                    player, minion_name));
+  }
 }
 
 void GameState::AddDemonInfo(const string& player,
                              const DemonInfo& demon_info) {
-//  const int pi = PlayerIndex(player);
+  CHECK_GE(num_players_, 7) << "Demon info unavailable for < 7 players";
+  CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
+      << "Demon info can only be shown in player or storyteller perspective";
+  CHECK(!cur_time_.IsDay && cur_time_.Count == 1)
+      << "Demon info is only shown on night 1";
+  const int p_index = PlayerIndex(player);
+  Role shown_token = perspective_ == STORYTELLER
+      ? st_shown_tokens_[p_index] : perspective_player_shown_token_;
+  CHECK_EQ(shown_token, IMP)
+      << "Player " << player
+      << " needs to be shown the IMP token in order to get demon info";
+  // Demon info is always correct in TB:
+  const auto& assigned_roles = night_roles_[0];
+  for (const string& minion_name : demon_info.minions()) {
+    vector<BoolVar> minion_i;
+    for (Role role : kMinionRoles) {
+      minion_i.push_back(assigned_roles[PlayerIndex(minion_name)][role]);
+    }
+    model_.AddExactlyOne(minion_i)
+          .WithName(absl::StrFormat("%s learns demon info: %s is a minion",
+                                    player, minion_name));
+  }
+  for (int bluff : demon_info.bluffs()) {
+    model_.AddEquality(roles_in_play_[bluff], model_.FalseVar())
+          .WithName(absl::StrFormat("%s learns demon info: bluff %s", player,
+                                    Role_Name(bluff)));
+  }
 }
 
 void GameState::AddRoleAction(const string& player,

@@ -79,7 +79,30 @@ class GameState {
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
   void AddClaim(const string& player, Role role);
-  void AddClaim(const string& player, Role role, const RoleAction& info);
+  void AddClaimWasherwomanInfo(
+      const string& player, const LearnRoleInfo& washerwoman_info);
+  void AddClaimLibrarianInfo(
+      const string& player, const LearnRoleInfo& librarian_info);
+  void AddClaimInvestigatorInfo(
+      const string& player, const LearnRoleInfo& investigator_info);
+  void AddClaimChefInfo(const string& player, int chef_info);
+  void AddClaimEmpathInfo(const string& player, int empath_info);
+  void AddClaimFortuneTellerAction(
+      const string& player, const FortuneTellerAction& fortuneteller_action);
+  void AddClaimMonkAction(const string& player, const string& monk_action);
+  void AddClaimButlerAction(const string& player, const string& butler_action);
+  void AddClaimRavenkeeperInfo(
+      const string& player, const RavenkeeperInfo& ravenkeeper_info);
+  void AddClaimUndertakerInfo(const string& player, Role undertaker_info);
+  void AddClaimSlayerAction(const string& player, const string& slayer_action);
+  // The open Spy play.
+  void AddClaimSpyInfo(const string& player, const SpyInfo& spy_info);
+  // These are quite useless for Evil, here for completeness:
+  void AddClaimPoisonerAction(const string& player,
+                              const string& poisoner_action);
+  // May theoretically occur after Recluse starpass.
+  void AddClaimImpAction(const string& player, const string& imp_action);
+
   void AddVictory(Team victory);
   void AddShownToken(const string& player, Role role);
   void AddMinionInfo(const string& player,
@@ -115,6 +138,10 @@ class GameState {
     return is_alive_[PlayerIndex(player)];
   }
 
+  Role ClaimedRole(const string& player) {
+    return claimed_roles_[PlayerIndex(player)];
+  }
+
   string OnTheBlock() const {
     return on_the_block_ == kNoPlayer ? "" : players_[on_the_block_];
   }
@@ -139,11 +166,18 @@ class GameState {
   Team WinningTeam() const { return victory_; }
 
   // Returns the current role (which might have changed from night 1).
-  Role GetRole(const string& player) {
+  Role GetRole(const string& player) const {
     CHECK_EQ(perspective_, STORYTELLER)
         << "Roles are only set in Storyteller perspective";
     return st_player_roles_[PlayerIndex(player)];
   }
+
+  string PerspectivePlayer() const {
+    return perspective_player_ == kNoPlayer
+        ? "" : players_[perspective_player_];
+  }
+
+  Role ShownToken(const string& player) const;
 
   // Solver API
 
@@ -162,13 +196,12 @@ class GameState {
  private:
   GameState(Perspective perspective, const Setup& setup);
 
+  void InitNightRoleVars();
+  void InitDayRoleVars();
   void InitVarRolesInPlay();
-  void InitRoleVars();
-  void InitHelperVars();
-  void InitNextNightRoleVars();
-  void InitNextNightHelperVars();
-  void InitNextDayRoleVars();
-  void InitNextDayHelperVars();
+  void InitShownTokenVars();
+  void InitIsEvilVars();
+  void InitImpVars();
   void InitPoisonerVars();
   void InitRedHerring(const string& name);
   int PlayerIndex(const string& name) const;
@@ -218,10 +251,15 @@ class GameState {
   int slayer_death_;  // A player index (or kNoPlayer) for last day Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.
   bool game_maybe_over_;  // Whether the next event can be a Victory event.
-  Team victory_;
+  Team victory_;  // The winning team, if the game is over.
+  vector<Role> claimed_roles_;  // x player, current claims.
+  // In player perspective, the player whose perspective this is.
+  int perspective_player_;
+  Role perspective_player_shown_token_;
 
   // These variables are only used in the storyteller perspective.
   vector<Role> st_player_roles_;  // Current roles.
+  vector<Role> st_shown_tokens_;  // Current shown tokens.
   int st_red_herring_;
   int st_poisoner_pick_;  // A player index (or kNoPlayer) for last night pick.
   int st_imp_pick_;  // A player index (or kNoPlayer) for last night Imp pick.

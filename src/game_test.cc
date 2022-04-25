@@ -14,6 +14,7 @@
 #include "src/game.h"
 
 #include "absl/types/span.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace botc {
@@ -39,6 +40,12 @@ GameState FromRolesWithRedHerring(absl::Span<const Role> roles,
 
 GameState FromRoles(absl::Span<const Role> roles) {
   return FromRolesWithRedHerring(roles, "");
+}
+
+MinionInfo NewMinionInfo(const string& demon) {
+  MinionInfo mi;
+  mi.set_demon(demon);
+  return mi;
 }
 
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
@@ -106,6 +113,122 @@ TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
       {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP}, "P4");
   // The SW can't be a red herring.
   EXPECT_EQ(g.SolveGame().worlds_size(), 0);
+}
+
+unordered_map<string, Role> CopyWorld(const SolverResponse r, int index) {
+  unordered_map<string, Role> world(
+      r.worlds(index).roles().begin(), r.worlds(index).roles().end());
+  return world;
+}
+
+// Nasty hack -- I should write a gMock matcher for this instead, especially
+// to compare multiple worlds unordered.
+#define EXPECT_WORLD_EQ(r, i, w) \
+    EXPECT_THAT(CopyWorld(r, i), testing::Eq(unordered_map<string, Role>(w)))
+
+TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", BUTLER);
+  g.AddClaim("P6", WASHERWOMAN);
+  g.AddClaim("P7", MONK);
+  g.AddClaim("P1", LIBRARIAN);  // Evil team lie
+  g.AddClaim("P2", SLAYER);
+  SolverResponse r = g.SolveGame();
+  EXPECT_EQ(r.worlds_size(), 1);
+  unordered_map<string, Role> expected_world({
+      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", BUTLER},
+      {"P6", WASHERWOMAN}, {"P7", MONK}});
+  EXPECT_WORLD_EQ(r, 0, expected_world);
+}
+
+TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", WASHERWOMAN);
+  g.AddClaim("P7", MONK);
+  g.AddClaim("P1", LIBRARIAN);  // Evil team lie
+  g.AddClaim("P2", SLAYER);
+  SolverResponse r = g.SolveGame();
+  EXPECT_EQ(r.worlds_size(), 4);
+  unordered_map<string, Role> expected_world({
+      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
+      {"P6", WASHERWOMAN}, {"P7", DRUNK}});
+  EXPECT_WORLD_EQ(r, 0, expected_world);
+  expected_world = {
+      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
+      {"P6", DRUNK}, {"P7", MONK}};
+  EXPECT_WORLD_EQ(r, 1, expected_world);
+  expected_world = {
+      {"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", SAINT}, {"P5", MAYOR},
+      {"P6", WASHERWOMAN}, {"P7", MONK}};
+  EXPECT_WORLD_EQ(r, 2, expected_world);
+  expected_world = {
+      {"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", DRUNK},
+      {"P6", WASHERWOMAN}, {"P7", MONK}};
+  EXPECT_WORLD_EQ(r, 3, expected_world);
+}
+
+TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Poisoner, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", WASHERWOMAN);
+  g.AddClaim("P7", MONK);
+  g.AddClaim("P1", EMPATH);  // Evil team lie
+  g.AddClaim("P2", SLAYER);
+  SolverResponse r = g.SolveGame();
+  EXPECT_EQ(r.worlds_size(), 1);
+  unordered_map<string, Role> expected_world({
+      {"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+      {"P5", SOLDIER}, {"P6", WASHERWOMAN}, {"P7", MONK}});
+  EXPECT_WORLD_EQ(r, 0, expected_world);
+}
+
+TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);  // P1 Poisoner, but they don't know the Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);  // Poisoner lies
+  g.AddClaim("P2", SLAYER);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SOLDIER);
+  SolverResponse r = g.SolveGame();
+  EXPECT_EQ(r.worlds_size(), 4);
+  unordered_map<string, Role> expected_world({
+      {"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", VIRGIN},
+      {"P5", IMP}});
+  EXPECT_WORLD_EQ(r, 0, expected_world);
+  expected_world = {
+      {"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", IMP},
+      {"P5", SOLDIER}};
+  EXPECT_WORLD_EQ(r, 1, expected_world);
+  expected_world = {
+      {"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+      {"P5", SOLDIER}};
+  EXPECT_WORLD_EQ(r, 2, expected_world);
+  expected_world = {
+      {"P1", POISONER}, {"P2", SLAYER}, {"P3", IMP}, {"P4", VIRGIN},
+      {"P5", SOLDIER}};
+  EXPECT_WORLD_EQ(r, 3, expected_world);
 }
 
 // To test: failing votes, succeeding votes, block replacements,
