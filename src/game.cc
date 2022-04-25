@@ -1192,6 +1192,8 @@ void GameState::AddDemonInfo(const string& player,
       << " needs to be shown the IMP token in order to get demon info";
   // Demon info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
+  CHECK_EQ(demon_info.minions_size(), num_minions_)
+      << "Demon info should have " << num_minions_ << " minions";
   for (const string& minion_name : demon_info.minions()) {
     vector<BoolVar> minion_i;
     for (Role role : kMinionRoles) {
@@ -1201,6 +1203,7 @@ void GameState::AddDemonInfo(const string& player,
           .WithName(absl::StrFormat("%s learns demon info: %s is a minion",
                                     player, minion_name));
   }
+  CHECK_EQ(demon_info.bluffs_size(), 3) << "Demon info should have 3 bluffs";
   for (int bluff : demon_info.bluffs()) {
     model_.AddEquality(roles_in_play_[bluff], model_.FalseVar())
           .WithName(absl::StrFormat("%s learns demon info: bluff %s", player,

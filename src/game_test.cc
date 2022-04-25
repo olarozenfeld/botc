@@ -48,6 +48,18 @@ MinionInfo NewMinionInfo(const string& demon) {
   return mi;
 }
 
+DemonInfo NewDemonInfo(absl::Span<const string> minions,
+                       absl::Span<const Role> bluffs) {
+  DemonInfo di;
+  for (const auto& minion : minions) {
+    di.add_minions(minion);
+  }
+  for (Role bluff : bluffs) {
+    di.add_bluffs(bluff);
+  }
+  return di;
+}
+
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
   GameState g = FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN});
   EXPECT_EQ(g.SolveGame().worlds_size(), 1);
@@ -216,6 +228,64 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
       {{"P1", POISONER}, {"P2", SLAYER}, {"P3", IMP}, {"P4", VIRGIN},
        {"P5", SOLDIER}}});
   EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(WorldEnumeration, MinionPerspectivePoisoner5PlayersFull) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);  // P1 Poisoner, but they don't know the Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);  // Poisoner lies
+  g.AddClaim("P2", SAINT);  // P2 claimed outsider, which P1 knows is a lie.
+  g.AddClaim("P3", CHEF);  // Therefore, P1 deduces P2 is the Imp.
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SOLDIER);
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SOLDIER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(WorldEnumeration, DemonPerspective7Players) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", NewDemonInfo({"P2"}, {EMPATH, CHEF, SOLDIER}));
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);  // Imp lies
+  g.AddClaim("P2", SAINT);  // Minion lies
+  g.AddClaim("P3", UNDERTAKER);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);  // No true outsider claims, so no Baron
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", SPY}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}},
+      {{"P1", IMP}, {"P2", POISONER}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}},
+      {{"P1", IMP}, {"P2", SCARLET_WOMAN}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", NewDemonInfo({"P2"}, {EMPATH, CHEF, SOLDIER}));
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);  // Imp lies
+  g.AddClaim("P2", SAINT);  // Minion lies
+  g.AddClaim("P3", CHEF);  // This is impossible, since Chef is a bluff.
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);
+  SolverResponse r = g.SolveGame();
+  EXPECT_EQ(r.worlds_size(), 0);
 }
 
 // To test: failing votes, succeeding votes, block replacements,

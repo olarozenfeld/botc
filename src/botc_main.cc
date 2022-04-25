@@ -25,11 +25,6 @@ using google::protobuf::TextFormat;
 
 namespace botc {
 void Run() {
-/*  GameState g = GameState::FromObserverPerspective({"P1", "P2", "P3", "P4", "P5"});
-  g.AddNight(1);
-  g.AddDay(1);
-  g.AddNomination("P1", "P2");
-  g.AddVote({"P3", "P1"}, "");*/
   GameState g = GameState::FromStorytellerPerspective(
       {"a", "b", "c", "d", "e"},
       {{"a", IMP}, {"b", MONK}, {"c", SPY}, {"d", EMPATH}, {"e", VIRGIN}});
