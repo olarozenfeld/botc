@@ -27,6 +27,7 @@ namespace botc {
 
 const int kNoPlayer =  - 1;  // Used in place of player index.
 
+using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpModelBuilder;
 using operations_research::sat::BoolVar;
 using std::string;
@@ -94,16 +95,25 @@ class GameState {
   void AddClaimRavenkeeperInfo(
       const string& player, const RavenkeeperInfo& ravenkeeper_info);
   void AddClaimUndertakerInfo(const string& player, Role undertaker_info);
-  void AddClaimSlayerAction(const string& player, const string& slayer_action);
+
+  // We have no Slayer action claim, because Slayer actions are public
+  // storyteller interactions.
+
   // The open Spy play.
   void AddClaimSpyInfo(const string& player, const SpyInfo& spy_info);
-  // These are quite useless for Evil, here for completeness:
-  void AddClaimPoisonerAction(const string& player,
-                              const string& poisoner_action);
+
+  // Claiming Poisoner does not convey information that couldn't be conveyed
+  // simpler by claiming anything else, so we leave it out.
+
   // May theoretically occur after Recluse starpass.
   void AddClaimImpAction(const string& player, const string& imp_action);
 
   void AddVictory(Team victory);
+
+  // An event to signal no event. Most common use-case is pre-solve, to
+  // indicate there was no night death, or the game isn't over.
+  void AddNoStorytellerAnnoucement();
+
   void AddShownToken(const string& player, Role role);
   void AddMinionInfo(const string& player,
                      const MinionInfo& minion_info);
@@ -139,8 +149,10 @@ class GameState {
   }
 
   Role ClaimedRole(const string& player) {
-    return claimed_roles_[PlayerIndex(player)];
+    return claim_of_player_[PlayerIndex(player)];
   }
+
+  vector<string> ClaimingRole(Role role);
 
   string OnTheBlock() const {
     return on_the_block_ == kNoPlayer ? "" : players_[on_the_block_];
@@ -182,14 +194,15 @@ class GameState {
   // Solver API
 
   // Solves the game and returns all valid worlds.
-  SolverResponse SolveGame() const;
-  SolverResponse SolveGame(
-      const unordered_map<string, Role>& player_roles) const;
+  SolverResponse SolveGame() const { return SolveGame(SolverRequest()); }
   SolverResponse SolveGame(const SolverRequest& request) const;
   // Returns a single valid world.
-  SolverResponse ValidWorld() const { return ValidWorld({}); }
-  SolverResponse ValidWorld(
-      const unordered_map<string, Role>& player_roles) const;
+  SolverResponse ValidWorld() const { return ValidWorld(SolverRequest()); }
+  SolverResponse ValidWorld(const SolverRequest& request) const {
+    SolverRequest r = request;
+    r.set_stop_after_first_solution(true);
+    return SolveGame(r);
+  }
 
   const CpModelBuilder& SatModel() const { return model_; }  // for debugging
 
@@ -203,10 +216,14 @@ class GameState {
   void InitIsEvilVars();
   void InitImpVars();
   void InitPoisonerVars();
+  void InitMonkVars();
   void InitRedHerring(const string& name);
   int PlayerIndex(const string& name) const;
 
   // Syntactic-sugar-type helper functions.
+  vector<BoolVar> CollectRolesForPlayer(
+    const vector<vector<BoolVar>>& from, int player,
+    absl::Span<const Role> roles, bool only_alive) const;
   vector<BoolVar> CollectRoles(const vector<vector<BoolVar>>& from,
                                absl::Span<const Role> roles,
                                bool only_alive) const;
@@ -214,6 +231,7 @@ class GameState {
                                absl::Span<const Role> roles) const;
   vector<BoolVar> CollectAliveRoles(const vector<vector<BoolVar>>& from,
                                     absl::Span<const Role> roles) const;
+  BoolVar CreateAliveRoleVar(Role role, const internal::Time& time);
   void PropagateRoles(const vector<vector<BoolVar>>& from,
                       const vector<vector<BoolVar>>& to,
                       absl::Span<const Role> roles);
@@ -221,6 +239,8 @@ class GameState {
                                const vector<vector<BoolVar>>& from,
                                const vector<vector<BoolVar>>& to,
                                absl::Span<const Role> roles);
+  BoolVar CreatePoisonerPickedRoleVar(Role role, int night, bool only_alive);
+  BoolVar CreatePoisonedRoleVar(Role role, int day, bool only_alive);
 
   // Constraints implementing particular roles.
   void AddBaronConstraints();
@@ -228,11 +248,19 @@ class GameState {
   void AddImpStarpassConstraints();
 
   // Other constraints.
+  void BeforeEvent(Event::DetailsCase event_type);
   void AddRoleUniquenessConstraints(
       const vector<vector<BoolVar>>& player_roles);
+  void AddNoDeathConstraints();
+  void AddVirginProcConstraints(bool proc);
   void AddGameNotOverConstraints();
   void AddGoodWonConstraints();
   void AddEvilWonConstraints();
+
+  vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
+  void WriteSatSolutionToFile(const CpSolverResponse response,
+                              CpModelBuilder* model,
+                              const string& filename) const;
 
   Perspective perspective_;
   vector<string> players_;
@@ -243,6 +271,8 @@ class GameState {
   int num_alive_;
   vector<internal::Nomination> nominations_;  // Last day nominations.
   vector<internal::SlayerShot> slayer_shots_;  // Last day Slayer shots.
+  vector<bool> player_used_slayer_shot_;  // Slayer can only shoot once.
+  vector<bool> player_has_been_nominated_;  // For Virgin procs.
   int num_votes_;  // Votes on the last nomination.
   int on_the_block_;  // A player index (or kNoPlayer) for the execution block.
   int execution_;  // A player index (or kNoPlayer) for last day's executee.
@@ -250,9 +280,12 @@ class GameState {
   int execution_death_;  // A player index for last day's execution death.
   int slayer_death_;  // A player index (or kNoPlayer) for last day Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.
-  bool game_maybe_over_;  // Whether the next event can be a Victory event.
+  bool next_event_maybe_victory_;  // Whether the next event can be a Victory.
+  bool next_event_maybe_death_;  // Whether the next event can be a death.
+  bool next_event_maybe_execution_;  // Whether the next event can be execution.
   Team victory_;  // The winning team, if the game is over.
-  vector<Role> claimed_roles_;  // x player, current claims.
+  vector<Role> claim_of_player_;  // x player, current claims.
+  vector<vector<int>> players_claiming_;  // x role, inverse of claim_of_player_
   // In player perspective, the player whose perspective this is.
   int perspective_player_;
   Role perspective_player_shown_token_;
@@ -263,6 +296,7 @@ class GameState {
   int st_red_herring_;
   int st_poisoner_pick_;  // A player index (or kNoPlayer) for last night pick.
   int st_imp_pick_;  // A player index (or kNoPlayer) for last night Imp pick.
+  int st_monk_pick_;  // A player index (or kNoPlayer) for last night Monk pick.
 
   // OR-Tools related variables: compiling BOTC to SAT.
   CpModelBuilder model_;
@@ -273,11 +307,16 @@ class GameState {
   vector<BoolVar> red_herring_;  // x player.
   vector<vector<BoolVar>> imp_pick_;  // x night x player, starting night 2.
   vector<vector<BoolVar>> poisoner_pick_;  // x night x player.
+  vector<vector<BoolVar>> monk_pick_;  // x night x player (if Monk is claimed).
   vector<BoolVar> is_evil_;  // x player.
 };
 
 // Syntactic sugar.
-SolverRequest FromPlayerRoles(const unordered_map<string, Role>& player_roles);
+MinionInfo NewMinionInfo(const string& demon);
+DemonInfo NewDemonInfo(absl::Span<const string> minions,
+                       absl::Span<const Role> bluffs);
+SolverRequest FromCurrentRoles(const unordered_map<string, Role>& player_roles);
+SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles);
 
 }  // namespace botc
 

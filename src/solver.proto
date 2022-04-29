@@ -29,14 +29,20 @@ message SolverRequest {
     repeated Role roles_not_in_play = 3;
   }
   // Additional assumptions to add into the model before solving.
-  Assumptions assumptions = 1;
+  Assumptions starting_assumptions = 1;  // State after setup.
+  Assumptions current_assumptions = 2;  // Current state.
 
   // If set, at most one world will be returned.
-  bool stop_after_first_solution = 2;
+  bool stop_after_first_solution = 3;
 
   // If set, will count all possible boolean assignments for each world.
   // Note this might slow down the solver considerably!
-  bool count_sub_worlds = 3;
+  bool count_sub_worlds = 4;
+
+  // Debug options.
+  // If present, directory to dump full SAT variable assignment files into for
+  // each solution.
+  string output_sat_model_solutions_dir = 5;
 }
 
 message SolverResponse {

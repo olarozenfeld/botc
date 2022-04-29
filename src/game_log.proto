@@ -200,6 +200,18 @@ message Event {
     // (Night deaths become public info on start of next day).
     Claim claim = 8;
     Team victory = 9; // Game end. Must be the last event, if present.
+    // This event may be optionally used to indicate that there was no event
+    // following the previous one that might have been relevant. For example,
+    // after the start of a day, this would indicate there was *not* a night
+    // death announcement (rather than we are unsure yet at the current game
+    // state whether a death will follow or not). These are the cases where
+    // this might be used in TB:
+    // * Start of day -> signal no night deaths
+    // * Death -> signal game didn't end
+    // * Nomination -> signal no execution (no Virgin proc)
+    // In other scripts, this might also get used after execution to signal no
+    // death, etc.
+    bool no_storyteller_announcement = 10;
   }
 }
 

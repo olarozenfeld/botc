@@ -42,24 +42,6 @@ GameState FromRoles(absl::Span<const Role> roles) {
   return FromRolesWithRedHerring(roles, "");
 }
 
-MinionInfo NewMinionInfo(const string& demon) {
-  MinionInfo mi;
-  mi.set_demon(demon);
-  return mi;
-}
-
-DemonInfo NewDemonInfo(absl::Span<const string> minions,
-                       absl::Span<const Role> bluffs) {
-  DemonInfo di;
-  for (const auto& minion : minions) {
-    di.add_minions(minion);
-  }
-  for (Role bluff : bluffs) {
-    di.add_bluffs(bluff);
-  }
-  return di;
-}
-
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
   GameState g = FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN});
   EXPECT_EQ(g.SolveGame().worlds_size(), 1);
@@ -288,9 +270,6 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   EXPECT_EQ(r.worlds_size(), 0);
 }
 
-// To test: failing votes, succeeding votes, block replacements,
-// executions, deaths (inferences e.g. Saint), Virgin procs.
-
 TEST(VotingProcess, ProgressiveVotes) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
@@ -322,6 +301,114 @@ TEST(Executions, CorrectGameState) {
   g.AddDeath("P1");
   EXPECT_EQ(g.NumAlive(), 4);
   EXPECT_FALSE(g.IsAlive("P1"));
+}
+
+TEST(ScarletWomanProc, ExecuteImp) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P5", SCARLET_WOMAN);
+  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", SOLDIER);  // Imp lies
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", FORTUNE_TELLER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);
+  g.AddNomination("P2", "P1");
+  g.AddVote({"P2", "P3", "P4", "P6"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddNight(2);
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(ScarletWomanProc, SlayerKillsImp) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P5", SCARLET_WOMAN);
+  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", SOLDIER);  // Imp lies
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", FORTUNE_TELLER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);
+  g.AddSlayerAction("P6", "P1");
+  g.AddDeath("P1");
+  g.AddNight(2);
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(GameEndConditions, ExecuteImpGameOver) {
+  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNomination("P1", "P1");
+  g.AddVote({"P2", "P3", "P4"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddVictory(GOOD);
+  SolverResponse r = g.ValidWorld();
+  EXPECT_EQ(r.worlds_size(), 1);
+  SolverRequest request;
+  auto* pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P1");
+  pr->set_role(IMP);
+  pr->set_is_not(true);
+  r = g.ValidWorld(request);
+  EXPECT_EQ(r.worlds_size(), 0);
+  pr->set_is_not(false);
+  request.mutable_starting_assumptions()->add_roles_in_play(SCARLET_WOMAN);
+  r = g.ValidWorld(request);
+  EXPECT_EQ(r.worlds_size(), 0);  // Because the SW would have proc-ed.
+}
+
+TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
+  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNomination("P1", "P1");
+  g.AddVote({"P2", "P3", "P4"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddNomination("P2", "P3");
+  g.AddVote({"P4", "P5"}, "P3");
+  g.AddExecution("P3");
+  g.AddDeath("P3");
+  g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
+  SolverResponse r = g.ValidWorld(FromCurrentRoles({{"P3", IMP}}));
+  EXPECT_EQ(r.worlds_size(), 0);
+}
+
+TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
+  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNomination("P1", "P1");
+  g.AddVote({"P2", "P3", "P4"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddNight(2);  // The game continues, so P1 Imp -> SW in play.
+  SolverRequest request = FromCurrentRoles({{"P1", IMP}});
+  SolverResponse r = g.ValidWorld(request);
+  EXPECT_EQ(r.worlds_size(), 1);
+  request.mutable_starting_assumptions()->add_roles_not_in_play(SCARLET_WOMAN);
+  r = g.ValidWorld(request);
+  EXPECT_EQ(r.worlds_size(), 0);
 }
 
 TEST(ObserverPerspective, SimpleTest) {

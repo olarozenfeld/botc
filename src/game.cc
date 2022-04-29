@@ -13,6 +13,10 @@
 
 #include "src/game.h"
 
+#include <algorithm>
+#include <iostream>
+#include <fstream>
+
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/model.h"
@@ -21,12 +25,12 @@
 namespace botc {
 
 namespace {
-using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpSolverStatus;
 using operations_research::sat::LinearExpr;
 using operations_research::sat::Model;
 using operations_research::sat::NewFeasibleSolutionObserver;
 using operations_research::sat::SatParameters;
+using std::ofstream;
 
 const int kNumTownsfolk[] = {3, 3, 5, 5, 5, 7, 7, 7, 9, 9, 9};
 const int kNumOutsiders[] = {0, 1, 0, 1, 2, 0, 1, 2, 0, 1, 2};
@@ -78,6 +82,15 @@ bool IsMinionRole(Role role) {
   }
   return false;
 }
+
+bool IsGoodRole(Role role) {
+  for (Role r : kGoodRoles) {
+    if (r == role) {
+      return true;
+    }
+  }
+  return false;
+}
 }  // namespace
 
 namespace internal {
@@ -88,6 +101,25 @@ string Time::ToString() const {
 
 // TODO(olaola): replace CHECKs with absl::Status everywhere.
 // TODO(olaola): fix the day poisoned bug (alive poisoner should exist).
+// TODO(olaola): validate day 1 hard-claims (because we need them).
+
+MinionInfo NewMinionInfo(const string& demon) {
+  MinionInfo mi;
+  mi.set_demon(demon);
+  return mi;
+}
+
+DemonInfo NewDemonInfo(absl::Span<const string> minions,
+                       absl::Span<const Role> bluffs) {
+  DemonInfo di;
+  for (const auto& minion : minions) {
+    di.add_minions(minion);
+  }
+  for (Role bluff : bluffs) {
+    di.add_bluffs(bluff);
+  }
+  return di;
+}
 
 GameState GameState::FromStorytellerPerspective(
     absl::Span<const string> players, const unordered_map<string, Role>& roles,
@@ -124,18 +156,29 @@ int GameState::PlayerIndex(const string& name) const {
   return it->second;
 }
 
+vector<string> GameState::ClaimingRole(Role role) {
+  vector<string> result;
+  for (int i : players_claiming_[role]) {
+    result.push_back(players_[i]);
+  }
+  return result;
+}
+
 GameState::GameState(Perspective perspective, const Setup& setup)
     : perspective_(perspective), num_players_(setup.players_size()),
       is_alive_(num_players_, true), num_alive_(num_players_),
+      player_used_slayer_shot_(num_players_),
+      player_has_been_nominated_(num_players_),
       num_votes_(0), on_the_block_(kNoPlayer), execution_(kNoPlayer),
       execution_death_(kNoPlayer), slayer_death_(kNoPlayer),
-      night_death_(kNoPlayer), game_maybe_over_(false),
-      victory_(TEAM_UNSPECIFIED), claimed_roles_(num_players_),
-      perspective_player_(kNoPlayer),
+      night_death_(kNoPlayer), next_event_maybe_victory_(false),
+      next_event_maybe_death_(false), next_event_maybe_execution_(false),
+      victory_(TEAM_UNSPECIFIED), claim_of_player_(num_players_),
+      players_claiming_(Role_ARRAYSIZE), perspective_player_(kNoPlayer),
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
       st_player_roles_(num_players_), st_shown_tokens_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
-      st_imp_pick_(kNoPlayer) {
+      st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer) {
   CHECK_NE(perspective_, PERSPECTIVE_UNSPECIFIED)
       << "Need to specify perspective";
   CHECK_GE(num_players_, 5);
@@ -166,7 +209,6 @@ GameState::GameState(Perspective perspective, const Setup& setup)
   }
 
   InitNightRoleVars();
-  InitIsEvilVars();
   InitRedHerring(setup.red_herring());
 }
 
@@ -192,7 +234,7 @@ void GameState::InitRedHerring(const string& name) {
       model_.FixVariable(v, i == st_red_herring_);
     }
     // Only a Good player can be a red herring.
-    model_.AddImplication(v, is_evil_[i].Not())
+    model_.AddImplication(v, Not(is_evil_[i]))
         .WithName(absl::StrFormat("%s implies %s is good", name, players_[i]));
   }
   const BoolVar& ft_in_play = roles_in_play_[FORTUNE_TELLER];
@@ -202,7 +244,7 @@ void GameState::InitRedHerring(const string& name) {
       .WithName("ft_in_play -> 1 red herring");
   // If a Fortune Teller is not in play, there is no red herring.
   model_.AddEquality(LinearExpr::Sum(red_herring_), 0)
-      .OnlyEnforceIf(ft_in_play.Not())
+      .OnlyEnforceIf(Not(ft_in_play))
       .WithName("!ft_in_play -> no red herring");
 }
 
@@ -242,12 +284,14 @@ void GameState::InitNightRoleVars() {
     for (Role role : kAllRoles) {
       // Variable/constraint names are for debugging only.
       string name = absl::StrFormat(
-        "role_%s_%s_night_1", players_[i], Role_Name(role));
+        "role_%s_%s_night_%d", players_[i], Role_Name(role),
+        cur_time_.Count == 0 ? 1 : cur_time_.Count);
       night_roles[i].push_back(model_.NewBoolVar().WithName(name));
     }
   }
   night_roles_.push_back(night_roles);
   AddRoleUniquenessConstraints(night_roles);
+  InitPoisonerVars();
   if (cur_time_.Count == 0) {
     InitShownTokenVars();
     InitVarRolesInPlay();
@@ -257,7 +301,6 @@ void GameState::InitNightRoleVars() {
     model_.AddEquality(LinearExpr::Sum(minions), num_minions_)
         .WithName(absl::StrFormat("Exactly %d minions", num_minions_));
     AddBaronConstraints();
-    InitPoisonerVars();
     if (perspective_ == STORYTELLER) {
       for (int i = 0; i < num_players_; ++i) {
         Role role = st_player_roles_[i];
@@ -269,6 +312,10 @@ void GameState::InitNightRoleVars() {
       }
     }
   } else {
+    InitImpVars();
+    if (players_claiming_[MONK].size() > 0) {
+      InitMonkVars();
+    }
     // The Good roles propagate from night 1:
     PropagateRoles(night_roles_[0], night_roles, kGoodRoles);
     // All Evil roles except Scarlet Woman & Imp propagate from previous day:
@@ -279,10 +326,10 @@ void GameState::InitNightRoleVars() {
 
 void GameState::AddRoleUniquenessConstraints(
     const vector<vector<BoolVar>>& player_roles) {
-  const string time = cur_time_.ToString();
+  const string time = cur_time_.Count == 0 ? "night_1" : cur_time_.ToString();
   // Each player assigned exactly one role:
   for (int i = 0; i < num_players_; ++i) {
-    string name = absl::StrFormat("player %s has unique role %s", players_[i],
+    string name = absl::StrFormat("Player %s has unique role %s", players_[i],
                                   time);
     model_.AddExactlyOne(player_roles[i]).WithName(name);
   }
@@ -291,9 +338,9 @@ void GameState::AddRoleUniquenessConstraints(
     if (role == IMP) {
       continue;
     }
-    vector<BoolVar> player_is_role(num_players_);
+    vector<BoolVar> player_is_role;
     for (int i = 0; i < num_players_; ++i) {
-      player_is_role[i] = player_roles[i][role];
+      player_is_role.push_back(player_roles[i][role]);
     }
     string name = absl::StrFormat("Role %s has at most one player %s",
                                   Role_Name(role), time);
@@ -309,7 +356,7 @@ void GameState::AddBaronConstraints() {
   const BoolVar& baron_in_play = roles_in_play_[BARON];
   vector<BoolVar> outsiders = CollectRoles(night_roles_[0], kOutsiderRoles);
   model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_)
-      .OnlyEnforceIf(baron_in_play.Not())
+      .OnlyEnforceIf(Not(baron_in_play))
       .WithName(
         absl::StrFormat("!baron_in_play -> %d outsiders", num_outsiders_));
   model_.AddEquality(LinearExpr::Sum(outsiders), num_outsiders_ + 2)
@@ -319,7 +366,7 @@ void GameState::AddBaronConstraints() {
   int num_townsfolk = kNumTownsfolk[num_players_ - 5];
   vector<BoolVar> townsfolk = CollectRoles(night_roles_[0], kTownsfolkRoles);;
   model_.AddEquality(LinearExpr::Sum(townsfolk), num_townsfolk)
-      .OnlyEnforceIf(baron_in_play.Not())
+      .OnlyEnforceIf(Not(baron_in_play))
       .WithName(
         absl::StrFormat("!baron_in_play -> %d townsfolk", num_townsfolk));
   model_.AddEquality(LinearExpr::Sum(townsfolk), num_townsfolk - 2)
@@ -339,7 +386,9 @@ void GameState::InitShownTokenVars() {
     }
     shown_token_.push_back(shown_token);
     // Every player was shown exactly one token:
-    model_.AddExactlyOne(shown_token);
+    model_.AddExactlyOne(shown_token)
+          .WithName(absl::StrFormat("Player %s shown exactly one token",
+                                    players_[i]));
     // No one is shown the DRUNK token:
     model_.FixVariable(shown_token[DRUNK], false);
   }
@@ -393,12 +442,36 @@ void GameState::InitIsEvilVars() {
   }
 }
 
-void GameState::AddEvent(const Event& event) {
+void GameState::AddNoStorytellerAnnoucement() {
+  BeforeEvent(Event::DETAILS_NOT_SET);
+}
+
+void GameState::BeforeEvent(Event::DetailsCase event_type) {
   CHECK_EQ(victory_, TEAM_UNSPECIFIED) << "No events allowed after victory";
-  if (game_maybe_over_ && event.details_case() != Event::kVictory) {
-    AddGameNotOverConstraints();
-    game_maybe_over_ = false;
+  if (event_type == Event::kClaim) {
+    CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
   }
+  if (next_event_maybe_victory_) {
+    next_event_maybe_victory_ = false;
+    if (event_type != Event::kVictory) {
+      AddGameNotOverConstraints();
+    }
+  }
+  if (next_event_maybe_death_) {
+    next_event_maybe_death_ = false;
+    if (event_type != Event::kDeath) {
+      AddNoDeathConstraints();  // No night death, or Slayer shot failed.
+    }
+  }
+  if (next_event_maybe_execution_) {
+    next_event_maybe_execution_ = false;
+    if (event_type != Event::kExecution) {
+      AddVirginProcConstraints(false);
+    }
+  }
+}
+
+void GameState::AddEvent(const Event& event) {
   switch (event.details_case()) {
     case Event::kDay:
       AddDay(event.day());
@@ -420,13 +493,15 @@ void GameState::AddEvent(const Event& event) {
       break;
     case Event::kDeath:
       AddDeath(event.death());
-      game_maybe_over_ = true;
       break;
     case Event::kClaim:
       AddClaim(event.claim());
       break;
     case Event::kVictory:
       AddVictory(event.victory());
+      break;
+    case Event::kNoStorytellerAnnouncement:
+      AddNoStorytellerAnnoucement();
       break;
     default:
       CHECK(false) << "Expected a valid event details, got: "
@@ -435,6 +510,7 @@ void GameState::AddEvent(const Event& event) {
 }
 
 void GameState::AddDay(int count) {
+  BeforeEvent(Event::kDay);
   CHECK(!cur_time_.IsDay)
       << "Trying to begin another day during day " << cur_time_.Count;
   cur_time_.IsDay = true;
@@ -443,12 +519,16 @@ void GameState::AddDay(int count) {
   InitDayRoleVars();
   nominations_.clear();
   slayer_shots_.clear();
+  if (count > 1) {
+    next_event_maybe_death_ = true;  // Night death announcements.
+  }
   num_votes_ = 0;
   on_the_block_ = execution_ = execution_death_ = slayer_death_ = night_death_ =
       kNoPlayer;
 }
 
 void GameState::AddNight(int count) {
+  BeforeEvent(Event::kNight);
   CHECK(cur_time_.IsDay || cur_time_.Count == 0)
     << "Trying to begin another night during night " << cur_time_.Count;
   cur_time_.IsDay = false;
@@ -461,29 +541,73 @@ void GameState::AddNight(int count) {
       "Night %d needs to follow day %d", cur_time_.Count + 1, cur_time_.Count);
   cur_time_.Count++;
   InitNightRoleVars();
-  InitPoisonerVars();
-  InitImpVars();
-  night_death_ = st_poisoner_pick_ = st_imp_pick_ = kNoPlayer;
+  night_death_ = st_poisoner_pick_ = st_imp_pick_ = st_monk_pick_ = kNoPlayer;
 }
 
 void GameState::InitImpVars() {
+  const string time = cur_time_.ToString();
   vector<BoolVar> imp_picks;
   for (int i = 0; i < num_players_; ++i) {
-    string name = absl::StrFormat("imp_picks_%s_night_%d", players_[i],
-                                  cur_time_.Count);
+    string name = absl::StrFormat("imp_picks_%s_%s", players_[i],
+                                  cur_time_.Count == 0 ? "1" : time);
     imp_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   imp_pick_.push_back(imp_picks);
+  // There is an alive Imp, or the game would have ended.
+  // An alive Imp can pick exactly one picks per night starting night 1:
+  const int kills = cur_time_.Count != 0;
+  model_.AddEquality(LinearExpr::Sum(imp_picks), kills)
+        .WithName(absl::StrFormat("%d imp picks %s", kills, time));
+}
+
+void GameState::InitMonkVars() {
+  // As an optimization for the open strategy, we introduce these only for
+  // when Monk has been claimed day 1. This is called starting night 2:
+  vector<BoolVar> monk_picks;
+  const string time = cur_time_.ToString();
+  for (int i = 0; i < num_players_; ++i) {
+    monk_picks.push_back(model_.NewBoolVar().WithName(
+        absl::StrFormat("monk_picks_%s_%s", players_[i], time)));
+  }
+  monk_pick_.push_back(monk_picks);
+  BoolVar alive_monk = CreateAliveRoleVar(MONK, cur_time_);
+  // No alive monk means no monk picks (and monk goes before the Imp):
+  model_.AddEquality(LinearExpr::Sum(monk_picks), 0)
+        .OnlyEnforceIf(Not(alive_monk))
+        .WithName(absl::StrFormat("!%s -> 0 monk picks", alive_monk.Name()));
+  // An alive monk can pick exactly one picks per night:
+  model_.AddEquality(LinearExpr::Sum(monk_picks), 1)
+        .OnlyEnforceIf(alive_monk)
+        .WithName(absl::StrFormat("%s -> 1 monk picks", alive_monk.Name()));
+  // A monk cannot pick themselves:
+  for (int i = 0; i < num_players_; ++i) {
+    const BoolVar& monk_i = night_roles_[0][i][MONK];
+    model_.AddImplication(monk_picks[i], Not(monk_i))
+          .WithName(absl::StrFormat("%s -> !%s", monk_picks[i].Name(),
+                                    monk_i.Name()));
+  }
 }
 
 void GameState::InitPoisonerVars() {
   vector<BoolVar> poisoner_picks;
+  const string night = absl::StrFormat(
+      "night_%d", cur_time_.Count == 0 ? 1 : cur_time_.Count);
   for (int i = 0; i < num_players_; ++i) {
-    string name = absl::StrFormat("poisoner_picks_%s_night_%d", players_[i],
-                                  (cur_time_.Count == 0 ? 1 : cur_time_.Count));
+    string name = absl::StrFormat("poisoner_picks_%s_%s", players_[i], night);
     poisoner_picks.push_back(model_.NewBoolVar().WithName(name));
   }
   poisoner_pick_.push_back(poisoner_picks);
+  BoolVar alive_poisoner = CreateAliveRoleVar(POISONER, cur_time_);
+  // No alive poisoner means no poisoner picks:
+  model_.AddEquality(LinearExpr::Sum(poisoner_picks), 0)
+        .OnlyEnforceIf(Not(alive_poisoner))
+        .WithName(absl::StrFormat("!%s -> 0 poisoner picks",
+                                  alive_poisoner.Name()));
+  // An alive Poisoner can pick exactly one picks per night:
+  model_.AddEquality(LinearExpr::Sum(poisoner_picks), 1)
+        .OnlyEnforceIf(alive_poisoner)
+        .WithName(absl::StrFormat("%s -> 1 poisoner picks",
+                                  alive_poisoner.Name()));
 }
 
 void GameState::InitDayRoleVars() {
@@ -503,7 +627,7 @@ void GameState::InitDayRoleVars() {
     PropagateRoles(night_roles_[0], day_roles, kAllRoles);
     return;
   }
-  // The Imp, and all Good roles except Recluse always propagate from night 1:
+  // All Good roles except Recluse always propagate from night 1:
   PropagateRoles(night_roles_[0], day_roles, kTownsfolkRoles);
   PropagateRoles(night_roles_[0], day_roles, {BUTLER, DRUNK, SAINT});
   // The Minions and Recluse can catch a starpass.
@@ -512,10 +636,10 @@ void GameState::InitDayRoleVars() {
 
 void GameState::AddScarletWomanConstraints() {
   // The Scarlet Woman becoming Imp triggers if and only if, on previous day:
-  // * There are >=5 alive players, AND
-  // * SW is alive, AND
-  // * SW is not poisoned, AND
-  // * The IMP died (executed OR Slayer shot)
+  // * SW is alive
+  // * SW is not poisoned
+  // * The IMP died (executed or Slayer shot)
+  // * There are >=4 alive players remaining (not counting the Imp)
   const auto& night_roles = night_roles_.back();
   const auto& day_roles = day_roles_.back();
   if (perspective_ == STORYTELLER) {
@@ -532,7 +656,7 @@ void GameState::AddScarletWomanConstraints() {
         (execution_death_ != kNoPlayer &&
          st_player_roles_[execution_death_] == IMP) ||
         (slayer_death_ != kNoPlayer && st_player_roles_[slayer_death_] == IMP));
-    if (num_alive_ >= 5 && imp_died && sw_player != kNoPlayer &&
+    if (num_alive_ >= 4 && imp_died && sw_player != kNoPlayer &&
         is_alive_[sw_player] && st_poisoner_pick_ != sw_player) {
       st_player_roles_[sw_player] = IMP;
     }
@@ -544,47 +668,55 @@ void GameState::AddScarletWomanConstraints() {
     // We do not return here, because we still want to add all the general SW
     // constraints, even though we just fixed the variables, as a sanity check.
   }
-  if (num_alive_ < 5 ||
+  if (num_alive_ < 4 ||
       (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
     // Then we know for sure SW can't trigger.
     PropagateRoles(day_roles, night_roles, {SCARLET_WOMAN, IMP});
     return;
   }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
-  BoolVar imp_died = day_roles[death][IMP];
-  const auto& poisoner_pick = poisoner_pick_.back();
+  const BoolVar& imp_died = day_roles[death][IMP];
+  BoolVar sw_alive = CreateAliveRoleVar(
+      SCARLET_WOMAN, {.IsDay = true, .Count = cur_time_.Count - 1});
+  BoolVar sw_poisoned = CreatePoisonedRoleVar(
+      SCARLET_WOMAN, cur_time_.Count - 1, true);
+  BoolVar sw_proc = model_.NewBoolVar().WithName(
+      absl::StrFormat("sw_proc_%s", cur_time_.ToString()));
+  model_.AddBoolAnd({imp_died, sw_alive, Not(sw_poisoned)})
+    .OnlyEnforceIf(sw_proc)
+    .WithName(absl::StrFormat("%s -> %s ^ %s ^ !%s", sw_proc.Name(),
+                              imp_died.Name(), sw_alive.Name(),
+                              sw_poisoned.Name()));
+  model_.AddBoolOr({Not(imp_died), Not(sw_alive), sw_poisoned})
+    .OnlyEnforceIf(Not(sw_proc))
+    .WithName(absl::StrFormat("!%s -> !%s V %s V %s", sw_proc.Name(),
+                              imp_died.Name(), sw_alive.Name(),
+                              sw_poisoned.Name()));
   for (int i = 0; i < num_players_; ++i) {
     BoolVar night_imp_i = night_roles[i][IMP];
     BoolVar night_sw_i = night_roles[i][SCARLET_WOMAN];
     BoolVar day_imp_i = day_roles[i][IMP];
     BoolVar day_sw_i = day_roles[i][SCARLET_WOMAN];
     // The Imp remains an Imp, even dead.
-    model_.AddImplication(day_imp_i, night_imp_i);
-    const string name = absl::StrFormat(
-        "sw_trigger_day_%d_%s", cur_time_.Count - 1, players_[i]);
-    BoolVar sw_trigger_i = model_.NewBoolVar().WithName(name);
-    if (is_alive_[i]) {
-      model_.AddBoolAnd({day_sw_i, poisoner_pick[i].Not(), imp_died})
-        .OnlyEnforceIf(sw_trigger_i)
-        .WithName(absl::StrFormat("%s -> definition", name));
-      model_.AddBoolOr({day_sw_i.Not(), poisoner_pick[i], imp_died.Not()})
-        .OnlyEnforceIf(sw_trigger_i.Not())
-        .WithName(absl::StrFormat("%s <- definition", name));
-    } else {
-      model_.FixVariable(sw_trigger_i, false);
-    }
-    model_.AddImplication(sw_trigger_i, night_imp_i)
-        .WithName(absl::StrFormat("%s -> %s", name, night_imp_i.Name()));
-    model_.AddImplication(sw_trigger_i, night_sw_i.Not())
-        .WithName(absl::StrFormat("%s -> !%s", name, night_sw_i.Name()));
-    model_.AddBoolOr({sw_trigger_i, day_imp_i})
-        .OnlyEnforceIf(night_imp_i)
-        .WithName(absl::StrFormat("%s -> %s V %s", night_imp_i.Name(),
-                  name, day_imp_i.Name()));
-    model_.AddBoolAnd({sw_trigger_i.Not(), day_sw_i})
-        .OnlyEnforceIf(night_sw_i)
-        .WithName(absl::StrFormat("%s -> !%s ^ %s", night_sw_i.Name(),
-                  name, day_sw_i.Name()));
+    model_.AddImplication(day_imp_i, night_imp_i)
+          .WithName(absl::StrFormat("%s -> %s", day_imp_i.Name(),
+                                    night_imp_i.Name()));
+    model_.AddImplication(day_sw_i, night_imp_i)
+          .OnlyEnforceIf(sw_proc)
+          .WithName(absl::StrFormat("%s -> (%s -> %s)", sw_proc.Name(),
+                                    day_sw_i.Name(), night_imp_i.Name()));
+    model_.AddImplication(day_sw_i, night_sw_i)
+          .OnlyEnforceIf(Not(sw_proc))
+          .WithName(absl::StrFormat("!%s -> (%s -> %s)", sw_proc.Name(),
+                                    day_sw_i.Name(), night_sw_i.Name()));
+    model_.AddBoolAnd({Not(day_sw_i), sw_proc})
+          .OnlyEnforceIf(night_sw_i)
+          .WithName(absl::StrFormat("%s -> %s ^ !%s", night_sw_i.Name(),
+                                    day_sw_i.Name(), sw_proc.Name()));
+    model_.AddBoolOr({day_imp_i, sw_proc})
+          .OnlyEnforceIf(night_imp_i)
+          .WithName(absl::StrFormat("%s -> %s V %s", night_imp_i.Name(),
+                                    day_imp_i.Name(), sw_proc.Name()));
   }
 }
 
@@ -610,13 +742,13 @@ void GameState::AddImpStarpassConstraints() {
       string name = absl::StrFormat(
           "!%s -> !%s V %s V !%s", starpass_i.Name(), imp_i.Name(),
           poisoned_i.Name(), imp_pick_i.Name());
-      model_.AddBoolOr({imp_i.Not(), poisoned_i, imp_pick_i.Not()})
-            .OnlyEnforceIf(starpass_i.Not())
+      model_.AddBoolOr({Not(imp_i), poisoned_i, Not(imp_pick_i)})
+            .OnlyEnforceIf(Not(starpass_i))
             .WithName(name);
       name = absl::StrFormat(
           "%s -> %s ^ !%s ^ %s", starpass_i.Name(), imp_i.Name(),
           poisoned_i.Name(), imp_pick_i.Name());
-      model_.AddBoolAnd({imp_i, poisoned_i.Not(), imp_pick_i})
+      model_.AddBoolAnd({imp_i, Not(poisoned_i), imp_pick_i})
             .OnlyEnforceIf(starpass_i)
             .WithName(name);
     }
@@ -645,24 +777,24 @@ void GameState::AddImpStarpassConstraints() {
           absl::StrFormat("%s_catches_starpass_%s", players_[i], night_name));
       player_catch.push_back(catch_i);
       // catch_i <-> !night_imp_i ^ day_imp_i
-      model_.AddBoolAnd({night_imp_i.Not(), day_imp_i})
+      model_.AddBoolAnd({Not(night_imp_i), day_imp_i})
           .OnlyEnforceIf(catch_i)
           .WithName(absl::StrFormat("%s -> !%s ^ %s", catch_i.Name(),
                                     night_imp_i.Name(), day_imp_i.Name()));
-      model_.AddBoolOr({night_imp_i, day_imp_i.Not()})
-          .OnlyEnforceIf(catch_i.Not())
+      model_.AddBoolOr({night_imp_i, Not(day_imp_i)})
+          .OnlyEnforceIf(Not(catch_i))
           .WithName(absl::StrFormat("!%s -> %s V !%s", catch_i.Name(),
                                     night_imp_i.Name(), day_imp_i.Name()));
       const BoolVar& recluse_i = night_roles[i][RECLUSE];
       const BoolVar& poisoned_i = poisoner_pick_.back()[i];
       BoolVar healthy_recluse_i = model_.NewBoolVar().WithName(
           absl::StrFormat("healthy_recluse_%s_%s", players_[i], night_name));
-      model_.AddBoolAnd({recluse_i, poisoned_i.Not()})
+      model_.AddBoolAnd({recluse_i, Not(poisoned_i)})
           .OnlyEnforceIf(healthy_recluse_i)
           .WithName(absl::StrFormat("%s -> %s ^ !%s", healthy_recluse_i.Name(),
                                     recluse_i.Name(), poisoned_i.Name()));
-      model_.AddBoolOr({recluse_i.Not(), poisoned_i})
-          .OnlyEnforceIf(healthy_recluse_i.Not())
+      model_.AddBoolOr({Not(recluse_i), poisoned_i})
+          .OnlyEnforceIf(Not(healthy_recluse_i))
           .WithName(absl::StrFormat("!%s -> !%s V %s", healthy_recluse_i.Name(),
                                     recluse_i.Name(), poisoned_i.Name()));
       vector<BoolVar> eligible_i;
@@ -673,10 +805,10 @@ void GameState::AddImpStarpassConstraints() {
         const BoolVar& e = role == RECLUSE ? healthy_recluse_i : night_role_i;
         eligible_i.push_back(e);
         eligible.push_back(e);
-        model_.AddImplication(e, nobody_eligible.Not()).WithName(
+        model_.AddImplication(e, Not(nobody_eligible)).WithName(
             absl::StrFormat("%s -> !%s", e.Name(), nobody_eligible.Name()));
         model_.AddEquality(night_role_i, day_role_i)
-              .OnlyEnforceIf(catch_i.Not())
+              .OnlyEnforceIf(Not(catch_i))
               .WithName(absl::StrFormat(
                   "!%s -> %s = %s", catch_i.Name(), night_role_i.Name(),
                   day_role_i.Name()));
@@ -694,7 +826,7 @@ void GameState::AddImpStarpassConstraints() {
                                   nobody_eligible.Name()));
   // !starpass -> exactly zero catch
   model_.AddEquality(LinearExpr::Sum(player_catch), 0)
-        .OnlyEnforceIf(starpass.Not())
+        .OnlyEnforceIf(Not(starpass))
         .WithName(absl::StrFormat("!%s -> no catch", starpass.Name()));
   // starpass -> exactly one catches OR nobody eligible
   player_catch.push_back(nobody_eligible);
@@ -704,15 +836,34 @@ void GameState::AddImpStarpassConstraints() {
             "%s -> 1 catch or noone eligible", starpass.Name()));
 }
 
+vector<BoolVar> GameState::CollectRolesForPlayer(
+    const vector<vector<BoolVar>>& from, int player,
+    absl::Span<const Role> roles, bool only_alive) const {
+  vector<BoolVar> result;
+  if (!only_alive || is_alive_[player]) {
+    for (Role role : roles) {
+      // Optimization for the open strategy: for good roles, we only need to
+      // consider players who claimed the role. This, of course, applies only
+      // starting day 1 (we rely on everyone claiming on start of day 1):
+      if (IsGoodRole(role) && (cur_time_.IsDay || cur_time_.Count > 1)) {
+        const auto& pp = players_claiming_[role];
+        if (std::find(pp.begin(), pp.end(), player) == pp.end()) {
+          continue;
+        }
+      }
+      result.push_back(from[player][role]);
+    }
+  }
+  return result;
+}
+
 vector<BoolVar> GameState::CollectRoles(const vector<vector<BoolVar>>& from,
                                         absl::Span<const Role> roles,
                                         bool only_alive) const {
   vector<BoolVar> result;
   for (int i = 0; i < num_players_; ++i) {
-    if (!only_alive || is_alive_[i]) {
-      for (int role : roles) {
-        result.push_back(night_roles_[0][i][role]);
-      }
+    for (const auto& v : CollectRolesForPlayer(from, i, roles, only_alive)) {
+      result.push_back(v);
     }
   }
   return result;
@@ -734,6 +885,18 @@ void GameState::PropagateRoles(const vector<vector<BoolVar>>& from,
   for (int i = 0; i < num_players_; ++i) {
     PropagateRolesForPlayer(i, from, to, roles);
   }
+}
+
+BoolVar GameState::CreateAliveRoleVar(Role role, const internal::Time& time) {
+  // At current time:
+  const auto& roles = time.IsDay ? day_roles_ : night_roles_;
+  const int count = time.Count == 0 ? 0 : time.Count - 1;
+  vector<BoolVar> alive_role_players = CollectAliveRoles(roles[count], {role});
+  BoolVar alive_role = model_.NewBoolVar().WithName(
+      absl::StrFormat("alive_%s_%s", Role_Name(role), time.ToString()));
+  model_.AddEquality(LinearExpr::Sum(alive_role_players), alive_role)
+        .WithName(absl::StrFormat("%s definition", alive_role.Name()));
+  return alive_role;
 }
 
 void GameState::PropagateRolesForPlayer(
@@ -781,6 +944,7 @@ void GameState::AddNomination(const Nomination& nomination) {
 }
 
 void GameState::AddNomination(const string& nominator, const string& nominee) {
+  BeforeEvent(Event::kNomination);
   CHECK(cur_time_.IsDay) << "Nominations can only occur during the day.";
   const int nominator_index = PlayerIndex(nominator);
   const int nominee_index = PlayerIndex(nominee);
@@ -794,6 +958,10 @@ void GameState::AddNomination(const string& nominator, const string& nominee) {
   }
   nominations_.push_back(
       {.Nominator = nominator_index, .Nominee = nominee_index});
+  if (!player_has_been_nominated_[nominee_index]) {
+    next_event_maybe_execution_ = true;
+  }
+  player_has_been_nominated_[nominee_index] = true;
 }
 
 void GameState::AddVote(const Vote& vote) {
@@ -805,6 +973,7 @@ void GameState::AddVote(const Vote& vote) {
 
 void GameState::AddVote(absl::Span<const string> votes,
                         const string& on_the_block) {
+  BeforeEvent(Event::kVote);
   CHECK(!nominations_.empty()) << "A vote must have a preceding nomination.";
   const auto& nomination = nominations_.back();
   // TODO(olaola): validate vote correctness better!
@@ -853,48 +1022,31 @@ void GameState::AddVote(absl::Span<const string> votes,
     }
   }
   on_the_block_ = cur_block;
-  // A Virgin didn't proc, otherwise we'd get an execution without a vote.
-  // So we know that nominee is not the Virgin, or is dead, or is poisoned.
-  if (is_alive_[nomination.Nominee]) {
-    const BoolVar& virgin = night_roles_[0][nomination.Nominee][VIRGIN];
-    const BoolVar& poisoned = poisoner_pick_.back()[nomination.Nominee];
-    model_.AddBoolOr({virgin.Not(), poisoned}).WithName(
-        absl::StrFormat("%s didn't Virgin proc -> !%s V %s",
-                        players_[nomination.Nominee], virgin.Name(),
-                        poisoned.Name()));
-  }
   // TODO(olaola): add Butler constraints here (could only vote with master).
 }
 
 void GameState::AddExecution(const string& name) {
+  BeforeEvent(Event::kExecution);
   CHECK(cur_time_.IsDay) << "Executions can only occur during the day.";
   const int executee = PlayerIndex(name);
   CHECK_EQ(execution_, kNoPlayer) << "More than one execution attempted.";
   CHECK(!nominations_.empty()) << "Execution must have a preceding nomination.";
 
   if (executee != on_the_block_) {
-    // Virgin proc.
     const auto& nomination = nominations_.back();
     CHECK_EQ(executee, nomination.Nominator)
         << absl::StrFormat("Execution needs to be either of %s (who is on the "
-                           "block), or of %s who is last to nominate, got %s",
-                           (on_the_block_ == kNoPlayer ? "nobody"
+                            "block), or of %s who is last to nominate, got %s",
+                            (on_the_block_ == kNoPlayer ? "nobody"
                               : players_[on_the_block_]),
-                           players_[nomination.Nominator], name);
-    CHECK(is_alive_[nomination.Nominee])
-        << "Virgin " << players_[nomination.Nominee]
-        << " needs to be alive to proc.";
-    const BoolVar& virgin = night_roles_[0][nomination.Nominee][VIRGIN];
-    const BoolVar& poisoned = poisoner_pick_.back()[nomination.Nominee];
-    model_.AddBoolAnd({virgin, poisoned.Not()}).WithName(
-        absl::StrFormat("%s Virgin proc -> %s ^ !%s",
-                        players_[nomination.Nominee], virgin.Name(),
-                        poisoned.Name()));
+                            players_[nomination.Nominator], name);
+    AddVirginProcConstraints(true);
   }
   execution_ = executee;
 }
 
 void GameState::AddDeath(const string& name) {
+  BeforeEvent(Event::kDeath);
   // Deaths are Storyteller announcements of deaths, hence they only occur
   // during the day.
   CHECK(cur_time_.IsDay) << "Death annoucements can only occur during the day.";
@@ -902,6 +1054,7 @@ void GameState::AddDeath(const string& name) {
   CHECK(is_alive_[death]) << "What is dead may never die: " << name;
   // Deaths are either an announced night death, Slayer shots, or executions,
   // in that order.
+  const string time = cur_time_.ToString();
   if (execution_ != kNoPlayer) {
     // This can only be an execution death, due to order.
     CHECK_EQ(death, execution_)
@@ -910,32 +1063,109 @@ void GameState::AddDeath(const string& name) {
     execution_death_ = death;
   } else if (!slayer_shots_.empty()) {
     // Must be a Slayer kill, due to order.
+    slayer_death_ = death;
     const auto& shot = slayer_shots_.back();
-    CHECK_EQ(death, shot.Target)
+    int target = shot.Target, slayer = shot.Slayer;
+    CHECK_EQ(death, target)
         << absl::StrFormat("Expected death of Slayer shot %s, got %s.",
-                           players_[shot.Target], name);
-    // Slayer procs, so we know they are alive, not poisoned, and shot the Imp
-    // or a non-poisoned Recluse: TODO(olaola): add this!
-    CHECK(is_alive_[shot.Slayer])
-        << "Slayer " << players_[shot.Slayer] << " needs to be alive to proc.";
-    const BoolVar& slayer = night_roles_[0][shot.Slayer][SLAYER];
-    const BoolVar& imp = day_roles_.back()[shot.Target][IMP];
-    const BoolVar& poisoned = poisoner_pick_.back()[shot.Slayer];
-    model_.AddBoolAnd({slayer, poisoned.Not(), imp}).WithName(
-        absl::StrFormat("%s Slayer proc -> %s ^ !%s ^ %s",
-                        players_[shot.Slayer], slayer.Name(), poisoned.Name(),
-                        imp.Name()));
-    // TODO(olaola): add spent constraint, here and for Virgin.
+                           players_[target], name);
+    CHECK(is_alive_[slayer])
+        << "Slayer " << players_[slayer] << " needs to be alive to proc.";
+    // We can deduce:
+    // * Slayer was actually the Slayer
+    // * Slayer was not poisoned
+    // * Target was the Imp OR a non-poisoned Recluse
+    const BoolVar& is_slayer = day_roles_.back()[slayer][SLAYER];
+    const BoolVar& imp = day_roles_.back()[target][IMP];
+    const BoolVar poisoned = CreatePoisonedRoleVar(
+        SLAYER, cur_time_.Count, true);
+    // Open strategy optimization: the actual Recluse would hardclaim day 1.
+    const auto& recluses = players_claiming_[RECLUSE];
+    if (std::find(recluses.begin(), recluses.end(), target) != recluses.end()) {
+      const BoolVar& recluse = day_roles_.back()[target][RECLUSE];
+      BoolVar poisoned_recluse = CreatePoisonedRoleVar(
+          RECLUSE, cur_time_.Count, true);
+      BoolVar healthy_recluse = model_.NewBoolVar().WithName(
+          absl::StrFormat("%s_healthy_recluse", players_[target]));
+      model_.AddBoolAnd({recluse, Not(poisoned_recluse)})
+            .OnlyEnforceIf(healthy_recluse)
+            .WithName(absl::StrFormat("%s -> %s ^ %s", healthy_recluse.Name(),
+                                      recluse.Name(), poisoned_recluse.Name()));
+      model_.AddBoolOr({Not(recluse), poisoned_recluse})
+            .OnlyEnforceIf(Not(healthy_recluse))
+            .WithName(absl::StrFormat("!%s -> !%s V !%s",
+                                      healthy_recluse.Name(), recluse.Name(),
+                                      poisoned_recluse.Name()));
+      BoolVar target_proc = model_.NewBoolVar().WithName(
+          absl::StrFormat("%s_healthy_recluse_or_imp", players_[target]));
+      model_.AddEquality(LinearExpr::Sum({imp, healthy_recluse}), target_proc)
+            .WithName(absl::StrFormat("%s = exactly 1 of %s, %s",
+                                      target_proc.Name(), imp.Name(),
+                                      healthy_recluse.Name()));
+      model_.AddBoolAnd({is_slayer, target_proc, Not(poisoned)})
+            .WithName(absl::StrFormat(
+                "Slayer shot succeeded %s -> %s ^ %s ^ !%s", time,
+                is_slayer.Name(), target_proc.Name(), poisoned.Name()));
+    } else {
+      model_.AddBoolAnd({is_slayer, imp, Not(poisoned)})
+            .WithName(absl::StrFormat(
+                "Slayer shot succeeded %s -> %s ^ %s ^ !%s", time,
+                is_slayer.Name(), imp.Name(), poisoned.Name()));
+    }
   } else {
     // Must be a night death, which is either an Imp pick, or a Mayor bounce.
     night_death_ = death;
-    // TODO(olaola): add appropriate constraints here.
+    // The Imp cannot be poisoned:
+    for (int i = 0; i < num_players_; ++i) {
+      if (is_alive_[i]) {
+        const BoolVar& imp_i = night_roles_.back()[i][IMP];
+        const BoolVar& poisoned_i = poisoner_pick_.back()[i];
+        model_.AddImplication(imp_i, Not(poisoned_i))
+              .WithName(absl::StrFormat("Imp killed %s %s: %s -> !%s", name,
+                                        time, imp_i.Name(), poisoned_i.Name()));
+      }
+    }
+    // The target cannot be Monk protected by a non-poisoned Monk:
+    for (int i : players_claiming_[MONK]) {
+      if (is_alive_[i]) {
+        const BoolVar& poisoned_i = poisoner_pick_.back()[i];
+        const BoolVar& monk_i = night_roles_[0][i][MONK];
+        const BoolVar& monk_pick = monk_pick_.back()[death];
+        model_.AddBoolOr({Not(monk_i), Not(monk_pick)})
+              .OnlyEnforceIf(Not(poisoned_i))
+              .WithName(absl::StrFormat(
+                  "Monk %s protects %s %s: !%s -> !%s V !%s", players_[i], name,
+                  time, poisoned_i.Name(), monk_i.Name(), monk_pick.Name()));
+      }
+    }
+    vector<BoolVar> picks;
+    picks.push_back(imp_pick_.back()[death]);
+    for (int i : players_claiming_[MAYOR]) {
+      if (is_alive_[i] && death != i) {  // Possible Mayor bounce
+        // Mayor needs to be non-poisoned and Imp picked:
+        const BoolVar& poisoned_i = poisoner_pick_.back()[i];
+        const BoolVar& mayor_i = night_roles_[0][i][MAYOR];
+        const BoolVar& picked = imp_pick_.back()[i];
+        picks.push_back(picked);
+        model_.AddBoolOr({Not(mayor_i), Not(picked)})
+              .OnlyEnforceIf(poisoned_i)
+              .WithName(absl::StrFormat("Mayor %s, %s died %s: %s -> !%s V !%s",
+                                        players_[i], name, time,
+                                        poisoned_i.Name(), mayor_i.Name(),
+                                        picked.Name()));
+      }
+    }
+    model_.AddExactlyOne(picks)
+          .WithName(absl::StrFormat("%s died %s -> Imp pick V Mayor bounce",
+                                    name, time));
   }
   is_alive_[death] = false;
   --num_alive_;
+  next_event_maybe_victory_ = true;
 }
 
 void GameState::AddClaim(const string& player, Role role) {
+  BeforeEvent(Event::kClaim);
   CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
   // The open strategy assumes that only Evil lies. Hence:
   // claim_role_X -> shown_token_X V is_evil
@@ -943,7 +1173,8 @@ void GameState::AddClaim(const string& player, Role role) {
   // still technically means they were shown the Imp token upon starpass, but we
   // only encode the night 1 shown tokens).
   const int p_index = PlayerIndex(player);
-  claimed_roles_[p_index] = role;
+  claim_of_player_[p_index] = role;
+  players_claiming_[role].push_back(p_index);
   if (role == IMP) {
     // Recluse starpass exception. Someone claiming Imp is either currently
     // the Good Imp, or some sort of starting Evil.
@@ -1001,12 +1232,14 @@ void GameState::AddClaim(const Claim& claim) {
       AddClaimUndertakerInfo(player, claim.info().undertaker_info());
       break;
     case RoleAction::kSlayerAction:
-      AddClaim(player, SLAYER);
-      AddClaimSlayerAction(player, claim.info().slayer_action());
+      CHECK(false)
+          << "Only role claims and claims about used night abilities are "
+          << "allowed. Claim SLAYER with no action instead.";
       break;
     case RoleAction::kPoisonerAction:
-      AddClaim(player, POISONER);
-      AddClaimPoisonerAction(player, claim.info().poisoner_action());
+      CHECK(false)
+          << "Claiming poisoner action does not convey info. Claim POISONER "
+          << "with no info instead";
       break;
     case RoleAction::kImpAction:
       AddClaim(player, IMP);
@@ -1024,75 +1257,65 @@ void GameState::AddClaim(const Claim& claim) {
 
 void GameState::AddClaimWasherwomanInfo(
     const string& player, const LearnRoleInfo& washerwoman_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimLibrarianInfo(
     const string& player, const LearnRoleInfo& librarian_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimInvestigatorInfo(
     const string& player, const LearnRoleInfo& investigator_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimChefInfo(const string& player, int chef_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimFortuneTellerAction(
     const string& player, const FortuneTellerAction& fortuneteller_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimMonkAction(const string& player,
                                    const string& monk_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimButlerAction(const string& player,
                                      const string& butler_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimRavenkeeperInfo(
     const string& player, const RavenkeeperInfo& ravenkeeper_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddClaimUndertakerInfo(const string& player,
                                        Role undertaker_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
-}
-
-void GameState::AddClaimSlayerAction(const string& player,
-                                     const string& slayer_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 // The open Spy play.
 void GameState::AddClaimSpyInfo(const string& player, const SpyInfo& spy_info) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
-}
-
-// This one are quite useless for Evil, here for completeness:
-void GameState::AddClaimPoisonerAction(const string& player,
-                            const string& poisoner_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 // Useless, but yay theoretically occur after Recluse starpass.
 void GameState::AddClaimImpAction(const string& player,
                                   const string& imp_action) {
-  CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddVictory(Team victory) {
+  BeforeEvent(Event::kVictory);
   CHECK_NE(victory, TEAM_UNSPECIFIED) << "Victory needs to be GOOD or EVIL";
   CHECK_EQ(victory_, TEAM_UNSPECIFIED)
       << "Team " << Team_Name(victory_) << " has already won.";
@@ -1106,6 +1329,7 @@ void GameState::AddVictory(Team victory) {
 }
 
 void GameState::AddShownToken(const string& player, Role role) {
+  BeforeEvent(Event::kStorytellerInteraction);
   CHECK_NE(role, ROLE_UNSPECIFIED) << "Need to specify a role";
   CHECK_NE(role, DRUNK) << "No one can be shown the DRUNK token";
   CHECK_NE(perspective_, OBSERVER) << "Observer cannot be shown tokens";
@@ -1147,6 +1371,7 @@ Role GameState::ShownToken(const string& player) const {
 
 void GameState::AddMinionInfo(const string& player,
                               const MinionInfo& minion_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Minion info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
       << "Minion info can only be shown in player or storyteller perspective";
@@ -1179,6 +1404,7 @@ void GameState::AddMinionInfo(const string& player,
 
 void GameState::AddDemonInfo(const string& player,
                              const DemonInfo& demon_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Demon info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
       << "Demon info can only be shown in player or storyteller perspective";
@@ -1264,56 +1490,135 @@ void GameState::AddRoleAction(const string& player,
 
 void GameState::AddWasherwomanInfo(
     const string& player, const LearnRoleInfo& washerwoman_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddLibrarianInfo(
     const string& player, const LearnRoleInfo& librarian_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddInvestigatorInfo(
     const string& player, const LearnRoleInfo& investigator_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddChefInfo(const string& player, int chef_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddEmpathInfo(const string& player, int empath_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddFortuneTellerAction(
     const string& player, const FortuneTellerAction& fortuneteller_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddMonkAction(const string& player, const string& monk_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddButlerAction(const string& player,
                                 const string& butler_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddRavenkeeperInfo(
     const string& player, const RavenkeeperInfo& ravenkeeper_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddUndertakerInfo(const string& player, Role undertaker_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddSlayerAction(const string& player,
                                 const string& slayer_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
+  CHECK(cur_time_.IsDay) << "Slayer only allowed to shoot during the day";
+  const int slayer = PlayerIndex(player);
+  const int target = PlayerIndex(slayer_action);
+  CHECK(!player_used_slayer_shot_[slayer])
+      << player << " already used a Slayer shot";
+  player_used_slayer_shot_[slayer] = true;
+  slayer_shots_.push_back(
+      {.Slayer = slayer, .Target = target});
+  next_event_maybe_death_ = true;
 }
 
 void GameState::AddPoisonerAction(const string& player,
                                   const string& poisoner_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
+  BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
+  BeforeEvent(Event::kStorytellerInteraction);
+}
+
+void GameState::AddVirginProcConstraints(bool proc) {
+  // Virgin proc is equal to AND of:
+  // * Nominee is alive
+  // * Nominee is the Virgin
+  // * Nominee is not poisoned
+  // * Nominator is a townsfolk or non-poisoned Spy (the Spy is optional)
+  const auto& nomination = nominations_.back();
+  if (!proc) {
+    if (!is_alive_[nomination.Nominee]) {
+      return;
+    }
+  } else {
+    CHECK(is_alive_[nomination.Nominee])
+        << "Virgin " << players_[nomination.Nominee]
+        << " needs to be alive to proc.";
+  }
+  const BoolVar& virgin = day_roles_.back()[nomination.Nominee][VIRGIN];
+  BoolVar poisoned = CreatePoisonedRoleVar(VIRGIN, cur_time_.Count, true);
+  BoolVar proc_townsfolk = model_.NewBoolVar().WithName(
+      absl::StrFormat("%s_is_townsfolk", players_[nomination.Nominator]));
+  vector<BoolVar> townsfolk_cases = CollectRolesForPlayer(
+      day_roles_.back(), nomination.Nominator, kTownsfolkRoles, true);
+
+  if (!proc) {
+    model_.AddEquality(LinearExpr::Sum(townsfolk_cases), proc_townsfolk)
+          .WithName(absl::StrFormat("%s definition", proc_townsfolk.Name()));
+    model_.AddBoolOr({Not(virgin), poisoned, Not(proc_townsfolk)})
+          .WithName(absl::StrFormat("%s didn't Virgin proc -> !%s V %s V %s",
+                                    players_[nomination.Nominee], virgin.Name(),
+                                    poisoned.Name(), proc_townsfolk.Name()));
+    return;
+  }
+  // In case of a proc, we need to add the non-poisoned Spy option to the
+  // townsfolk cases:
+  const BoolVar& spy = day_roles_.back()[nomination.Nominator][SPY];
+  BoolVar poisoned_spy = CreatePoisonedRoleVar(SPY, cur_time_.Count, true);
+  BoolVar healthy_spy = model_.NewBoolVar().WithName(
+      absl::StrFormat("%s_is_healthy_spy", players_[nomination.Nominator]));
+  model_.AddBoolAnd({spy, Not(poisoned_spy)})
+        .OnlyEnforceIf(healthy_spy)
+        .WithName(absl::StrFormat("%s -> %s ^ !%s", healthy_spy.Name(),
+                                  spy.Name(), poisoned_spy.Name()));
+  model_.AddBoolOr({Not(spy), poisoned_spy})
+        .OnlyEnforceIf(Not(healthy_spy))
+        .WithName(absl::StrFormat("!%s -> !%s V %s", healthy_spy.Name(),
+                                  spy.Name(), poisoned_spy.Name()));
+  townsfolk_cases.push_back(healthy_spy);
+  model_.AddEquality(LinearExpr::Sum(townsfolk_cases), proc_townsfolk)
+        .WithName(absl::StrFormat("%s definition", proc_townsfolk.Name()));
+  model_.AddBoolAnd({virgin, Not(poisoned), proc_townsfolk})
+        .WithName(absl::StrFormat("%s Virgin proc -> %s ^ !%s ^ %s",
+                                  players_[nomination.Nominee], virgin.Name(),
+                                  poisoned.Name(), proc_townsfolk.Name()));
 }
 
 void GameState::AddGoodWonConstraints() {
   // Good can only win if either:
+  // * Mayor win (no execution with 3 alive).
   // * The Imp died today (executed OR Slayer shot) AND
   //    * There are <5 alive players, OR
   //    * SW is not alive, OR
@@ -1321,6 +1626,7 @@ void GameState::AddGoodWonConstraints() {
   // OR (silly case, but needs to be addressed):
   // * The Imp killed themselves at night, AND
   // * No-one could catch the starpass (no alive minion - Recluse is optional)
+  // TODO(olaola): Add Mayor win case!
   const auto& day_roles = day_roles_.back();
   if (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer) {
     if (night_death_ == kNoPlayer) {
@@ -1344,7 +1650,7 @@ void GameState::AddGoodWonConstraints() {
   }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
   model_.FixVariable(day_roles[death][IMP], true);
-  if (num_alive_ >= 5) {
+  if (num_alive_ >= 4) {
     // SW is not alive or is poisoned.
     const auto& poisoner_pick = poisoner_pick_.back();
     for (int i = 0; i < num_players_; ++i) {
@@ -1369,7 +1675,7 @@ void GameState::AddEvilWonConstraints() {
         "Evil wins on execution of %s -> non-poisoned Saint was executed",
         players_[execution_death_]);
     BoolVar poisoned = poisoner_pick_[cur_time_.Count][execution_death_];
-    model_.AddBoolAnd({day_roles[execution_death_][SAINT], poisoned.Not()})
+    model_.AddBoolAnd({day_roles[execution_death_][SAINT], Not(poisoned)})
           .WithName(name);
     return;
   }
@@ -1382,10 +1688,156 @@ void GameState::AddEvilWonConstraints() {
   model_.AddExactlyOne(alive_imp).WithName("Evil wins -> an alive IMP exists");
 }
 
+BoolVar GameState::CreatePoisonerPickedRoleVar(
+    Role role, int night, bool only_alive) {
+  // Returns a new variable for whether a role was Poisoner picked during night.
+  // Note this is not quite the same as poisoned, because Poisoner might have
+  // since died (see CreatePoisonedAliveRoleVar for that amendment).
+  vector<BoolVar> picked_role_players;
+  vector<int> players_to_check;  // Open strategy optimization.
+  if (IsGoodRole(role)) {
+    players_to_check = players_claiming_[role];
+  } else {  // Might be anyone.
+    for (int i = 0; i < num_players_; ++i) {
+      players_to_check.push_back(i);
+    }
+  }
+  for (int i : players_to_check) {
+    if (!only_alive || is_alive_[i]) {
+      const BoolVar& role_i = night_roles_[night - 1][i][role];
+      const BoolVar& picked_i = poisoner_pick_[night - 1][i];
+      const BoolVar& picked_role_i = model_.NewBoolVar().WithName(
+          absl::StrFormat("poisoner_picked_%s_%s_night_%d", Role_Name(role),
+                          players_[i], night));
+      model_.AddBoolAnd({role_i, picked_i})
+            .OnlyEnforceIf(picked_role_i)
+            .WithName(absl::StrFormat("%s -> %s ^ %s",
+                                      picked_role_i.Name(), role_i.Name(),
+                                      picked_i.Name()));
+      model_.AddBoolOr({Not(role_i), Not(picked_i)})
+            .OnlyEnforceIf(Not(picked_role_i))
+            .WithName(absl::StrFormat("!%s -> !%s V !%s",
+                                      picked_role_i.Name(), role_i.Name(),
+                                      picked_i.Name()));
+      picked_role_players.push_back(picked_role_i);
+    }
+  }
+  BoolVar role_picked = model_.NewBoolVar().WithName(
+      absl::StrFormat("poisoner_picked_%s_night_%d", Role_Name(role), night));
+  if (picked_role_players.size() == 0) {
+    model_.AddEquality(role_picked, model_.FalseVar())
+          .WithName(absl::StrFormat("%s has no options", role_picked.Name()));
+  } else {
+    model_.AddEquality(LinearExpr::Sum(picked_role_players), role_picked)
+          .WithName(absl::StrFormat("%s definition", role_picked.Name()));
+  }
+  return role_picked;
+}
+
+BoolVar GameState::CreatePoisonedRoleVar(Role role, int day, bool only_alive) {
+  // A role is poisoned during the day (and remainder of the night, too) if:
+  // * The role is in play, and:
+  //   * Poisoner picked them last night
+  //   * Poisoner survived the night
+  BoolVar picked = CreatePoisonerPickedRoleVar(role, day, only_alive);
+  if (night_death_ == kNoPlayer) {
+    return picked;
+  }
+  BoolVar poisoned = model_.NewBoolVar().WithName(
+      absl::StrFormat("poisoned_%s_day_%d", Role_Name(role), day));
+  const BoolVar& poisoner_died = day_roles_.back()[night_death_][POISONER];
+  model_.AddBoolAnd({picked, Not(poisoner_died)})
+        .OnlyEnforceIf(poisoned)
+        .WithName(absl::StrFormat("%s -> %s ^ !%s", poisoned.Name(),
+                                  picked.Name(), poisoner_died.Name()));
+  model_.AddBoolOr({Not(picked), poisoner_died})
+        .OnlyEnforceIf(Not(poisoned))
+        .WithName(absl::StrFormat("!%s -> !%s V %s", poisoned.Name(),
+                                  picked.Name(), poisoner_died.Name()));
+  return poisoned;
+}
+
+void GameState::AddNoDeathConstraints() {
+  const string time = cur_time_.ToString();
+  // This happens after new day or Slayer shot when there was no death.
+  // In case of Slayer shot, the shot failed:
+  if (slayer_shots_.size() > 0) {
+    // This can be either:
+    // * Slayer is not actually the Slayer
+    // * Target is not the Imp
+    // * Slayer was poisoned
+    const auto& shot = slayer_shots_.back();
+    int target = shot.Target, slayer = shot.Slayer;
+    const BoolVar& is_slayer = day_roles_.back()[slayer][SLAYER];
+    const BoolVar& is_imp = day_roles_.back()[target][IMP];
+    const BoolVar poisoned = CreatePoisonedRoleVar(
+        SLAYER, cur_time_.Count, true);
+    model_.AddBoolOr({Not(is_slayer), Not(is_imp), poisoned})
+          .WithName(absl::StrFormat("Slayer shot failed %s -> !%s V !%s V %s",
+                                    time, is_slayer.Name(), is_imp.Name(),
+                                    poisoned.Name()));
+    return;
+  }
+  // In case of new day, the Imp did not kill at night. This could be:
+  // * Imp chose to sink a kill on a dead player (Imp pick is mandatory)
+  // * Imp was poisoned
+  // * Monk was not poisoned ^ Imp picked alive Monk protected target
+  vector<BoolVar> cases;
+  const auto& imp_picks = imp_pick_.back();
+  for (int i = 0; i < num_players_; ++i) {
+    if (!is_alive_[i]) {
+      cases.push_back(imp_picks[i]);  // Sink kill.
+    }
+  }
+  BoolVar imp_poisoned = CreatePoisonerPickedRoleVar(
+      IMP, cur_time_.Count, true);
+  cases.push_back(imp_poisoned);
+  if (players_claiming_[MONK].size() > 0) {
+    vector<BoolVar> same_picks;
+    for (int i = 0; i < num_players_; ++i) {
+      if (is_alive_[i]) {
+        const BoolVar& imp_pick_i = imp_pick_.back()[i];
+        const BoolVar& monk_pick_i = monk_pick_.back()[i];
+        BoolVar both_pick_i = model_.NewBoolVar().WithName(
+            absl::StrFormat("imp_and_monk_pick_%s_%s", players_[i], time));
+        model_.AddBoolAnd({imp_pick_i, monk_pick_i})
+              .OnlyEnforceIf(both_pick_i)
+              .WithName(absl::StrFormat("%s -> %s ^ %s",
+                                        both_pick_i.Name(),
+                                        imp_pick_i.Name(), monk_pick_i.Name()));
+        model_.AddBoolOr({Not(imp_pick_i), Not(monk_pick_i)})
+              .OnlyEnforceIf(Not(both_pick_i))
+              .WithName(absl::StrFormat("!%s -> !%s V !%s",
+                                        both_pick_i.Name(),
+                                        imp_pick_i.Name(), monk_pick_i.Name()));
+        same_picks.push_back(both_pick_i);
+      }
+    }
+    BoolVar picks_equal = model_.NewBoolVar().WithName(
+        absl::StrFormat("imp_and_monk_pick_same_%s", time));
+    model_.AddEquality(LinearExpr::Sum(same_picks), picks_equal)
+          .WithName(absl::StrFormat("%s definition", picks_equal.Name()));
+    BoolVar monk_poisoned = CreatePoisonerPickedRoleVar(
+        MONK, cur_time_.Count, true);
+    BoolVar protected_pick = model_.NewBoolVar().WithName(
+        absl::StrFormat("imp_pick_healthy_monk_protected_%s", time));
+    model_.AddBoolAnd({Not(monk_poisoned), picks_equal})
+          .OnlyEnforceIf(protected_pick)
+          .WithName(absl::StrFormat("%s -> !%s ^ %s", protected_pick.Name(),
+                                    monk_poisoned.Name(), picks_equal.Name()));
+    model_.AddBoolOr({monk_poisoned, Not(picks_equal)})
+          .OnlyEnforceIf(Not(protected_pick))
+          .WithName(absl::StrFormat("!%s -> %s V !%s", protected_pick.Name(),
+                                    monk_poisoned.Name(), picks_equal.Name()));
+    cases.push_back(protected_pick);
+  }
+  model_.AddBoolOr(cases).WithName(absl::StrFormat("No night deaths %s", time));
+}
+
 void GameState::AddGameNotOverConstraints() {
   // This is during the day, after a death. It means !(GOOD won) && !(EVIL won).
   //
-  // Good wins iff there is no alive Imp.
+  // Good wins iff there is no alive Imp and the SW cannot become an Imp.
   //
   // Evil wins iff either:
   // * A non-poisoned Saint was executed, OR
@@ -1397,52 +1849,94 @@ void GameState::AddGameNotOverConstraints() {
     model_.AddBoolOr({model_.FalseVar()}).WithName(name);
     return;
   }
-  const auto& night_roles = night_roles_.back();
-  vector<BoolVar> alive_imp = CollectAliveRoles(night_roles, {IMP});
-  model_.AddExactlyOne(alive_imp).WithName(absl::StrFormat(
-      "Good did not win -> 1 Imp is alive on %s", cur_time_.ToString()));
+  const auto& roles = day_roles_.back();
+  vector<BoolVar> alive_imp = CollectAliveRoles(roles, {IMP});
+  if (num_alive_ >=4) {
+    BoolVar alive_sw = CreateAliveRoleVar(SCARLET_WOMAN, cur_time_);
+    BoolVar poisoned_sw = CreatePoisonedRoleVar(
+        SCARLET_WOMAN, cur_time_.Count, true);
+    BoolVar healthy_sw = model_.NewBoolVar().WithName(
+        absl::StrFormat("healthy_scarlet_woman_%s", cur_time_.ToString()));
+    model_.AddBoolAnd({Not(poisoned_sw), alive_sw})
+          .OnlyEnforceIf(healthy_sw)
+          .WithName(absl::StrFormat("%s -> !%s ^ %s", healthy_sw.Name(),
+                                    poisoned_sw.Name(), alive_sw.Name()));
+    model_.AddBoolOr({poisoned_sw, Not(alive_sw)})
+          .OnlyEnforceIf(Not(healthy_sw))
+          .WithName(absl::StrFormat("!%s -> %s V !%s", healthy_sw.Name(),
+                                    poisoned_sw.Name(), alive_sw.Name()));
+    alive_imp.push_back(healthy_sw);  // SW can become Imp at night.
+  }
+  model_.AddBoolOr(alive_imp).WithName(absl::StrFormat(
+      "Good did not win -> Imp or healthy SW is alive on %s",
+      cur_time_.ToString()));
   if (execution_death_ != kNoPlayer) {
-    BoolVar poisoned = poisoner_pick_.back()[execution_death_];
-    const string name = absl::StrFormat(
-        "Evil did not win day %d -> %s is not the SAINT or %s was poisoned",
-        cur_time_.Count - 1, players_[execution_death_],
-        players_[execution_death_]);
-    model_.AddBoolOr({night_roles[execution_death_][SAINT].Not(), poisoned})
-        .WithName(name);
+    BoolVar poisoned = CreatePoisonedRoleVar(SAINT, cur_time_.Count, false);
+    const BoolVar& executed_saint = roles[execution_death_][SAINT];
+    model_.AddBoolOr({Not(executed_saint), poisoned})
+          .WithName(absl::StrFormat("Evil did not win %s -> !%s V %s",
+                                    cur_time_.ToString(), executed_saint.Name(),
+                                    poisoned.Name()));
   }
 }
 
-SolverRequest FromPlayerRoles(const unordered_map<string, Role>& player_roles) {
+SolverRequest FromCurrentRoles(
+    const unordered_map<string, Role>& player_roles) {
   SolverRequest request;
   for (const auto& it : player_roles) {
-    auto *pr = request.mutable_assumptions()->add_roles();
+    auto *pr = request.mutable_current_assumptions()->add_roles();
     pr->set_player(it.first);
     pr->set_role(it.second);
   }
-  request.set_stop_after_first_solution(true);
   return request;
 }
 
-SolverResponse GameState::ValidWorld(
-    const unordered_map<string, Role>& player_roles) const {
-  SolverRequest request = FromPlayerRoles(player_roles);
-  request.set_stop_after_first_solution(true);
-  return SolveGame(request);
-}
-
-SolverResponse GameState::SolveGame() const {
-  return SolveGame(SolverRequest());
-}
-
-SolverResponse GameState::SolveGame(
-    const unordered_map<string, Role>& player_roles) const {
+SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles) {
   SolverRequest request;
-  for (const auto& it : player_roles) {
-    auto *pr = request.mutable_assumptions()->add_roles();
-    pr->set_player(it.first);
-    pr->set_role(it.second);
+  for (Role role : roles) {
+    request.mutable_starting_assumptions()->add_roles_not_in_play(role);
   }
-  return SolveGame(request);
+  return request;
+}
+
+void GameState::WriteSatSolutionToFile(const CpSolverResponse response,
+                                      CpModelBuilder* model,
+                                       const string& filename) const {
+  ofstream f;
+  f.open(filename);
+    for (int i = 0; i < response.solution_size(); ++i) {
+      operations_research::sat::IntVar v = model->GetIntVarFromProtoIndex(i);
+      f << v.Name() << ": " << SolutionIntegerValue(response, v) << "\n";
+    }
+  f.close();
+}
+
+vector<BoolVar> GameState::CollectAssumptionLiterals(
+    const SolverRequest& request) const {
+  vector<BoolVar> assumption_literals;
+  const auto& current_roles =
+    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
+  const auto& current_assumptions = request.current_assumptions();
+  for (const auto& pr : current_assumptions.roles()) {
+    const int player = PlayerIndex(pr.player());
+    const auto& v = current_roles[player][pr.role()];
+    assumption_literals.push_back(pr.is_not() ? Not(v) : v);
+  }
+  // TODO(olaola): support roles_in_play for current.
+  const auto& starting_roles = night_roles_[0];
+  const auto& starting_assumptions = request.starting_assumptions();
+  for (const auto& pr : starting_assumptions.roles()) {
+    const int player = PlayerIndex(pr.player());
+    const auto& v = starting_roles[player][pr.role()];
+    assumption_literals.push_back(pr.is_not() ? Not(v) : v);
+  }
+  for (int role : starting_assumptions.roles_in_play()) {
+    assumption_literals.push_back(roles_in_play_[role]);
+  }
+  for (int role : starting_assumptions.roles_not_in_play()) {
+    assumption_literals.push_back(Not(roles_in_play_[role]));
+  }
+  return assumption_literals;
 }
 
 // This function will be very slow in low-info game states. Consider adding
@@ -1450,22 +1944,11 @@ SolverResponse GameState::SolveGame(
 SolverResponse GameState::SolveGame(const SolverRequest& request) const {
   SolverResponse result;
   CpModelBuilder model(model_);  // Making a copy to add assumptions repeatedly.
-  const auto& current_roles =
-    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
-  vector<BoolVar> assumption_literals;
-  for (const auto& pr : request.assumptions().roles()) {
-    const int player = PlayerIndex(pr.player());
-    const auto& v = current_roles[player][pr.role()];
-    assumption_literals.push_back(pr.is_not() ? v.Not() : v);
-  }
-  for (int role : request.assumptions().roles_in_play()) {
-    assumption_literals.push_back(roles_in_play_[role]);
-  }
-  for (int role : request.assumptions().roles_not_in_play()) {
-    assumption_literals.push_back(roles_in_play_[role].Not());
-  }
+  vector<BoolVar> assumption_literals = CollectAssumptionLiterals(request);
   model.AddAssumptions(assumption_literals);
   CpSolverResponse response;
+  const auto& current_roles =
+    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
   while (true) {
     response = Solve(model.Build());
     CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
@@ -1479,8 +1962,8 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     vector<BoolVar> inverted;
     for (int i = 0; i < num_players_; ++i) {
       for (Role role : kAllRoles) {
-        if (SolutionIntegerValue(response, current_roles[i][role])) {
-          inverted.push_back(current_roles[i][role].Not());
+        if (SolutionBooleanValue(response, current_roles[i][role])) {
+          inverted.push_back(Not(current_roles[i][role]));
           const string player = players_[i];
           CHECK(roles->find(player) == roles->end())
               << "Double role assignment for player " << player;
@@ -1489,6 +1972,12 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
       }
     }
     CHECK_EQ(roles->size(), num_players_) << "Not all players assigned roles.";
+    if (!request.output_sat_model_solutions_dir().empty()) {
+      const string filename = absl::StrFormat(
+          "%s/sat_solution_%d", request.output_sat_model_solutions_dir(),
+          result.worlds_size());
+      WriteSatSolutionToFile(response, &model, filename);
+    }
     if (request.stop_after_first_solution()) {
       break;
     }

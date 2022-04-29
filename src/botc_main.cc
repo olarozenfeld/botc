@@ -13,6 +13,7 @@
 
 #include <fcntl.h>
 #include <fstream>
+#include <iostream>
 
 #include "src/game.h"
 
@@ -26,6 +27,8 @@ using std::string;
 ABSL_FLAG(string, game_log, "", "Game log file path.");
 ABSL_FLAG(string, solver_parameters, "", "Solver parameters file path.");
 ABSL_FLAG(string, output_model, "", "Optional SAT model output file.");
+ABSL_FLAG(string, output_model_vars, "",
+    "Optional SAT model variables output file.");
 ABSL_FLAG(string, output_solution, "", "Optional solution output file.");
 
 namespace botc {
@@ -33,6 +36,7 @@ using google::protobuf::io::FileInputStream;
 using google::protobuf::io::FileOutputStream;
 using google::protobuf::Message;
 using google::protobuf::TextFormat;
+using std::ofstream;
 
 void ReadProtoFromFile(const string& filename, Message* msg) {
   int fi = open(filename.c_str(), O_RDONLY);
@@ -51,6 +55,27 @@ void WriteProtoToFile(const string& filename, const Message& msg) {
   close(fd);
 }
 
+GameState SampleGame() {
+  GameState g = GameState::FromPlayerPerspective(
+      {"P1", "P2", "P3", "P4", "P5", "P6", "P7"});
+  g.AddNight(1);
+  g.AddShownToken("P5", SCARLET_WOMAN);
+  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", SOLDIER);  // Imp lies
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", FORTUNE_TELLER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);
+  g.AddSlayerAction("P6", "P1");
+  g.AddDeath("P1");
+  g.AddNight(2);
+
+  return g;
+}
+
 void Run() {
   string game_log = absl::GetFlag(FLAGS_game_log);
   CHECK(!game_log.empty()) << "--game_log should be a valid path";
@@ -65,8 +90,18 @@ void Run() {
   }
 
   string output_model = absl::GetFlag(FLAGS_output_model);
+  const auto& model_pb = g.SatModel().Build();
   if (!output_model.empty()) {
-    WriteProtoToFile(output_model, g.SatModel().Build());
+    WriteProtoToFile(output_model, model_pb);
+  }
+  string output_model_vars = absl::GetFlag(FLAGS_output_model_vars);
+  if (!output_model_vars.empty()) {
+    ofstream f;
+    f.open(output_model_vars);
+      for (int i = 0; i < model_pb.variables_size(); ++i) {
+        f << i << ": " << VarDebugString(model_pb, i) << "\n";
+      }
+    f.close();
   }
 
   SolverResponse solution = g.SolveGame(request);
