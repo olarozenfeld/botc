@@ -112,7 +112,7 @@ class GameState {
 
   // An event to signal no event. Most common use-case is pre-solve, to
   // indicate there was no night death, or the game isn't over.
-  void AddNoStorytellerAnnoucement();
+  void AddNoStorytellerAnnouncement();
 
   void AddShownToken(const string& player, Role role);
   void AddMinionInfo(const string& player,
@@ -217,6 +217,7 @@ class GameState {
   void InitImpVars();
   void InitPoisonerVars();
   void InitMonkVars();
+  void InitButlerVars();
   void InitRedHerring(const string& name);
   int PlayerIndex(const string& name) const;
 
@@ -295,8 +296,9 @@ class GameState {
   vector<Role> st_shown_tokens_;  // Current shown tokens.
   int st_red_herring_;
   int st_poisoner_pick_;  // A player index (or kNoPlayer) for last night pick.
-  int st_imp_pick_;  // A player index (or kNoPlayer) for last night Imp pick.
-  int st_monk_pick_;  // A player index (or kNoPlayer) for last night Monk pick.
+  int st_imp_pick_;  // A player index (or kNoPlayer) for last night pick.
+  int st_monk_pick_;  // A player index (or kNoPlayer) for last night pick.
+  int st_butler_pick_;  // A player index (or kNoPlayer) for last night pick.
 
   // OR-Tools related variables: compiling BOTC to SAT.
   CpModelBuilder model_;
@@ -308,6 +310,7 @@ class GameState {
   vector<vector<BoolVar>> imp_pick_;  // x night x player, starting night 2.
   vector<vector<BoolVar>> poisoner_pick_;  // x night x player.
   vector<vector<BoolVar>> monk_pick_;  // x night x player (if Monk is claimed).
+  vector<vector<BoolVar>> butler_pick_;  // x night x player (if it is claimed).
   vector<BoolVar> is_evil_;  // x player.
 };
 

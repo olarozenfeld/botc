@@ -291,6 +291,77 @@ TEST(VotingProcess, ProgressiveVotes) {
   EXPECT_EQ(g.OnTheBlock(), "P4");
 }
 
+TEST(Virgin, HealthyVirginProc) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", SOLDIER);
+  g.AddClaim("P7", INVESTIGATOR);
+  g.AddNomination("P3", "P4");
+  g.AddExecution("P3");
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", DRUNK}, {"P7", INVESTIGATOR}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(Virgin, DrunkVirginNonProc) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", SOLDIER);
+  g.AddClaim("P7", INVESTIGATOR);
+  g.AddNomination("P3", "P4");
+  g.AddNoStorytellerAnnouncement();  // No proc.
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", DRUNK},
+       {"P5", SAINT}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(Virgin, PoisonedVirginNonProc) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);
+  g.AddMinionInfo("P1", NewMinionInfo("P2"));
+  g.AddPoisonerAction("P1", "P4");
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", SAINT);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", EMPATH);
+  g.AddClaim("P6", SOLDIER);
+  g.AddClaim("P7", INVESTIGATOR);
+  g.AddNomination("P3", "P4");
+  g.AddNoStorytellerAnnouncement();  // No proc.
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", EMPATH}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
 TEST(Executions, CorrectGameState) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);

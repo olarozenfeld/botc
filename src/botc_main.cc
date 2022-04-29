@@ -57,21 +57,16 @@ void WriteProtoToFile(const string& filename, const Message& msg) {
 
 GameState SampleGame() {
   GameState g = GameState::FromPlayerPerspective(
-      {"P1", "P2", "P3", "P4", "P5", "P6", "P7"});
+      {"P1", "P2", "P3", "P4", "P5", "P6"});
   g.AddNight(1);
-  g.AddShownToken("P5", SCARLET_WOMAN);
-  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddShownToken("P1", BARON);
   g.AddDay(1);
-  g.AddClaim("P1", SOLDIER);  // Imp lies
+  g.AddClaim("P1", EMPATH);
   g.AddClaim("P2", MAYOR);
   g.AddClaim("P3", CHEF);
   g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", FORTUNE_TELLER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);
-  g.AddSlayerAction("P6", "P1");
-  g.AddDeath("P1");
-  g.AddNight(2);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", SOLDIER);
 
   return g;
 }

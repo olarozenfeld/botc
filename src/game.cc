@@ -178,7 +178,8 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
       st_player_roles_(num_players_), st_shown_tokens_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
-      st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer) {
+      st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer),
+      st_butler_pick_(kNoPlayer) {
   CHECK_NE(perspective_, PERSPECTIVE_UNSPECIFIED)
       << "Need to specify perspective";
   CHECK_GE(num_players_, 5);
@@ -292,6 +293,7 @@ void GameState::InitNightRoleVars() {
   night_roles_.push_back(night_roles);
   AddRoleUniquenessConstraints(night_roles);
   InitPoisonerVars();
+  InitButlerVars();  // TODO(olaola): optimize so these are created on demand.
   if (cur_time_.Count == 0) {
     InitShownTokenVars();
     InitVarRolesInPlay();
@@ -442,7 +444,7 @@ void GameState::InitIsEvilVars() {
   }
 }
 
-void GameState::AddNoStorytellerAnnoucement() {
+void GameState::AddNoStorytellerAnnouncement() {
   BeforeEvent(Event::DETAILS_NOT_SET);
 }
 
@@ -501,7 +503,7 @@ void GameState::AddEvent(const Event& event) {
       AddVictory(event.victory());
       break;
     case Event::kNoStorytellerAnnouncement:
-      AddNoStorytellerAnnoucement();
+      AddNoStorytellerAnnouncement();
       break;
     default:
       CHECK(false) << "Expected a valid event details, got: "
@@ -541,7 +543,8 @@ void GameState::AddNight(int count) {
       "Night %d needs to follow day %d", cur_time_.Count + 1, cur_time_.Count);
   cur_time_.Count++;
   InitNightRoleVars();
-  night_death_ = st_poisoner_pick_ = st_imp_pick_ = st_monk_pick_ = kNoPlayer;
+  night_death_ = st_poisoner_pick_ = st_imp_pick_ = st_monk_pick_ =
+      st_butler_pick_ = kNoPlayer;
 }
 
 void GameState::InitImpVars() {
@@ -608,6 +611,35 @@ void GameState::InitPoisonerVars() {
         .OnlyEnforceIf(alive_poisoner)
         .WithName(absl::StrFormat("%s -> 1 poisoner picks",
                                   alive_poisoner.Name()));
+}
+
+void GameState::InitButlerVars() {
+  vector<BoolVar> butler_picks;
+  const string night = absl::StrFormat(
+      "night_%d", cur_time_.Count == 0 ? 1 : cur_time_.Count);
+  for (int i = 0; i < num_players_; ++i) {
+    string name = absl::StrFormat("butler_picks_%s_%s", players_[i], night);
+    butler_picks.push_back(model_.NewBoolVar().WithName(name));
+  }
+  butler_pick_.push_back(butler_picks);
+  BoolVar alive_butler = CreateAliveRoleVar(BUTLER, cur_time_);
+  // No alive butler means no Butler picks:
+  model_.AddEquality(LinearExpr::Sum(butler_picks), 0)
+        .OnlyEnforceIf(Not(alive_butler))
+        .WithName(absl::StrFormat("!%s -> 0 butler picks",
+                                  alive_butler.Name()));
+  // An alive Butler can pick exactly one picks per night:
+  model_.AddEquality(LinearExpr::Sum(butler_picks), 1)
+        .OnlyEnforceIf(alive_butler)
+        .WithName(absl::StrFormat("%s -> 1 butler picks",
+                                  alive_butler.Name()));
+  // A Butler cannot pick themselves:
+  for (int i = 0; i < num_players_; ++i) {
+    const BoolVar& butler_i = night_roles_[0][i][BUTLER];
+    model_.AddImplication(butler_picks[i], Not(butler_i))
+          .WithName(absl::StrFormat("%s -> !%s", butler_picks[i].Name(),
+                                    butler_i.Name()));
+  }
 }
 
 void GameState::InitDayRoleVars() {
@@ -1518,6 +1550,19 @@ void GameState::AddFortuneTellerAction(
 
 void GameState::AddMonkAction(const string& player, const string& monk_action) {
   BeforeEvent(Event::kStorytellerInteraction);
+  const int monk = PlayerIndex(player);
+  const int target = PlayerIndex(monk_action);
+  CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
+  CHECK_NE(perspective_, OBSERVER) << "Observer cannot see Monk actions";
+  if (perspective_ == STORYTELLER) {
+    CHECK_EQ(st_player_roles_[monk], MONK)
+        << player << " needs to be the MONK, got "
+        << Role_Name(st_player_roles_[monk]);
+    st_monk_pick_ = target;
+  }
+  const BoolVar& picked = monk_pick_.back()[target];
+  model_.AddEquality(picked, model_.TrueVar())
+        .WithName(absl::StrFormat("monk action: %s", picked.Name()));
 }
 
 void GameState::AddButlerAction(const string& player,
@@ -1551,10 +1596,34 @@ void GameState::AddSlayerAction(const string& player,
 void GameState::AddPoisonerAction(const string& player,
                                   const string& poisoner_action) {
   BeforeEvent(Event::kStorytellerInteraction);
+  const int poisoner = PlayerIndex(player);
+  const int target = PlayerIndex(poisoner_action);
+  CHECK_NE(perspective_, OBSERVER) << "Observer cannot see poisoner actions";
+  if (perspective_ == STORYTELLER) {
+    CHECK_EQ(st_player_roles_[poisoner], POISONER)
+        << player << " needs to be the POISONER, got "
+        << Role_Name(st_player_roles_[poisoner]);
+    st_poisoner_pick_ = target;
+  }
+  const BoolVar& picked = poisoner_pick_.back()[target];
+  model_.AddEquality(picked, model_.TrueVar())
+        .WithName(absl::StrFormat("Poisoner action: %s", picked.Name()));
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
   BeforeEvent(Event::kStorytellerInteraction);
+  const int imp = PlayerIndex(player);
+  const int target = PlayerIndex(imp_action);
+  CHECK_NE(perspective_, OBSERVER) << "Observer cannot see Imp actions";
+  if (perspective_ == STORYTELLER) {
+    CHECK_EQ(st_player_roles_[imp], IMP)
+        << player << " needs to be the IMP, got "
+        << Role_Name(st_player_roles_[imp]);
+    st_imp_pick_ = target;
+  }
+  const BoolVar& picked = imp_pick_.back()[target];
+  model_.AddEquality(picked, model_.TrueVar())
+        .WithName(absl::StrFormat("Imp action: %s", picked.Name()));
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
