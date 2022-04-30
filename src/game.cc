@@ -55,6 +55,7 @@ const Role kMinionRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON};
 const Role kEvilRoles[] = {POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
 const Role kNonTownsfolkRoles[] = {
     BUTLER, DRUNK, RECLUSE, SAINT, POISONER, SPY, SCARLET_WOMAN, BARON, IMP};
+const Role kFirstNightRoles[] = {WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF};
 
 Setup SetupProto(absl::Span<const string> players) {
   Setup setup;
@@ -74,8 +75,8 @@ Setup StorytellerSetupProto(absl::Span<const string> players,
   return setup;
 }
 
-bool IsMinionRole(Role role) {
-  for (Role r : kMinionRoles) {
+bool IsRoleInRoles(Role role, absl::Span<const Role> roles) {
+  for (Role r : roles) {
     if (r == role) {
       return true;
     }
@@ -83,13 +84,24 @@ bool IsMinionRole(Role role) {
   return false;
 }
 
+bool IsMinionRole(Role role) {
+  return IsRoleInRoles(role, kMinionRoles);
+}
+
+bool IsTownsfolkRole(Role role) {
+  return IsRoleInRoles(role, kTownsfolkRoles);
+}
+
+bool IsOutsiderRole(Role role) {
+  return IsRoleInRoles(role, kOutsiderRoles);
+}
+
 bool IsGoodRole(Role role) {
-  for (Role r : kGoodRoles) {
-    if (r == role) {
-      return true;
-    }
-  }
-  return false;
+  return IsRoleInRoles(role, kGoodRoles);
+}
+
+bool IsFirstNightRole(Role role) {
+  return IsRoleInRoles(role, kFirstNightRoles);
 }
 }  // namespace
 
@@ -99,27 +111,15 @@ string Time::ToString() const {
 }
 }  // namespace internal
 
-// TODO(olaola): replace CHECKs with absl::Status everywhere.
-// TODO(olaola): fix the day poisoned bug (alive poisoner should exist).
-// TODO(olaola): validate day 1 hard-claims (because we need them).
-
-MinionInfo NewMinionInfo(const string& demon) {
-  MinionInfo mi;
-  mi.set_demon(demon);
-  return mi;
-}
-
-DemonInfo NewDemonInfo(absl::Span<const string> minions,
-                       absl::Span<const Role> bluffs) {
-  DemonInfo di;
-  for (const auto& minion : minions) {
-    di.add_minions(minion);
-  }
-  for (Role bluff : bluffs) {
-    di.add_bluffs(bluff);
-  }
-  return di;
-}
+// TODO(olaola):
+// * Replace CHECKs with absl::Status everywhere for testing.
+// * Validate day 1 hard-claims (because we need them).
+// * Validate player interactions (e.g. exactly 1 FT action per night)
+// * Validate night order.
+// * Unit test Imp starpass.
+// * Solver optimization ideas:
+//   * Require full claims before solve, and defer constraint building until
+//     after solve (will reduce some constraints).
 
 GameState GameState::FromStorytellerPerspective(
     absl::Span<const string> players, const unordered_map<string, Role>& roles,
@@ -176,6 +176,7 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       victory_(TEAM_UNSPECIFIED), claim_of_player_(num_players_),
       players_claiming_(Role_ARRAYSIZE), perspective_player_(kNoPlayer),
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
+      night_action_used_(num_players_),
       st_player_roles_(num_players_), st_shown_tokens_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
       st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer),
@@ -545,6 +546,18 @@ void GameState::AddNight(int count) {
   InitNightRoleVars();
   night_death_ = st_poisoner_pick_ = st_imp_pick_ = st_monk_pick_ =
       st_butler_pick_ = kNoPlayer;
+  if (perspective_ == STORYTELLER) {
+    for (int i = 0; i < num_players_; ++i) {
+      if (!IsFirstNightRole(st_shown_tokens_[i])) {
+        night_action_used_[i] = false;
+      }
+    }
+  }
+  if (perspective_ == PLAYER) {
+    if (!IsFirstNightRole(perspective_player_shown_token_)) {
+      night_action_used_[perspective_player_] = false;
+    }
+  }
 }
 
 void GameState::InitImpVars() {
@@ -1288,18 +1301,47 @@ void GameState::AddClaim(const Claim& claim) {
 }
 
 void GameState::AddClaimWasherwomanInfo(
-    const string& player, const LearnRoleInfo& washerwoman_info) {
+    const string& player, const string& ping1, const string& ping2,
+    Role role) {
   BeforeEvent(Event::kClaim);
+  CHECK_EQ(ClaimedRole(player), WASHERWOMAN)  // because it's clearer, imo
+      << player << " needs to claim WASHERWOMAN before claiming info";
+  CHECK(IsTownsfolkRole(role));
+  AddLearningRoleInfoConstraints(player, WASHERWOMAN, ping1, ping2, role);
+}
+
+void GameState::AddClaimWasherwomanInfo(
+    const string& player, const LearnRoleInfo& info) {
+  AddClaimWasherwomanInfo(player, info.ping1(), info.ping2(), info.role());
 }
 
 void GameState::AddClaimLibrarianInfo(
-    const string& player, const LearnRoleInfo& librarian_info) {
+    const string& player, const string& ping1, const string& ping2,
+    Role role) {
   BeforeEvent(Event::kClaim);
+  CHECK_EQ(ClaimedRole(player), LIBRARIAN)  // because it's clearer, imo
+      << player << " needs to claim LIBRARIAN before claiming info";
+  CHECK(IsOutsiderRole(role));
+  AddLearningRoleInfoConstraints(player, LIBRARIAN, ping1, ping2, role);
+}
+
+void GameState::AddClaimLibrarianInfo(
+    const string& player, const LearnRoleInfo& info) {
+  AddClaimLibrarianInfo(player, info.ping1(), info.ping2(), info.role());
 }
 
 void GameState::AddClaimInvestigatorInfo(
-    const string& player, const LearnRoleInfo& investigator_info) {
+    const string& player, const string& ping1, const string& ping2, Role role) {
   BeforeEvent(Event::kClaim);
+  CHECK_EQ(ClaimedRole(player), INVESTIGATOR)  // because it's clearer, imo
+      << player << " needs to claim INVESTIGATOR before claiming info";
+  CHECK(IsMinionRole(role));
+  AddLearningRoleInfoConstraints(player, INVESTIGATOR, ping1, ping2, role);
+}
+
+void GameState::AddClaimInvestigatorInfo(
+    const string& player, const LearnRoleInfo& info) {
+  AddClaimInvestigatorInfo(player, info.ping1(), info.ping2(), info.role());
 }
 
 void GameState::AddClaimChefInfo(const string& player, int chef_info) {
@@ -1311,8 +1353,14 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
 }
 
 void GameState::AddClaimFortuneTellerAction(
-    const string& player, const FortuneTellerAction& fortuneteller_action) {
+    const string& player, const string& pick1, const string& pick2, bool yes) {
   BeforeEvent(Event::kClaim);
+}
+
+void GameState::AddClaimFortuneTellerAction(
+    const string& player, const FortuneTellerAction& action) {
+  AddClaimFortuneTellerAction(
+      player, action.pick1(), action.pick2(), action.yes());
 }
 
 void GameState::AddClaimMonkAction(const string& player,
@@ -1326,8 +1374,13 @@ void GameState::AddClaimButlerAction(const string& player,
 }
 
 void GameState::AddClaimRavenkeeperInfo(
-    const string& player, const RavenkeeperInfo& ravenkeeper_info) {
+    const string& player, const string& pick, Role role) {
   BeforeEvent(Event::kClaim);
+}
+
+void GameState::AddClaimRavenkeeperInfo(const string& player,
+                                        const RavenkeeperInfo& info) {
+  AddClaimRavenkeeperInfo(player, info.pick(), info.role());
 }
 
 void GameState::AddClaimUndertakerInfo(const string& player,
@@ -1401,8 +1454,8 @@ Role GameState::ShownToken(const string& player) const {
   }
 }
 
-void GameState::AddMinionInfo(const string& player,
-                              const MinionInfo& minion_info) {
+void GameState::AddMinionInfo(const string& player, const string& demon,
+                              absl::Span<const string> minions) {
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Minion info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
@@ -1417,11 +1470,11 @@ void GameState::AddMinionInfo(const string& player,
       << " needs to be shown a minion token in order to get minion info";
   // Minion info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
-  const int demon = PlayerIndex(minion_info.demon());
-  model_.AddEquality(assigned_roles[demon][IMP], model_.TrueVar())
+  const int demon_index = PlayerIndex(demon);
+  model_.AddEquality(assigned_roles[demon_index][IMP], model_.TrueVar())
         .WithName(absl::StrFormat("%s learns minion info: %s is the demon",
-                                  player, minion_info.demon()));
-  for (const string& minion_name : minion_info.minions()) {
+                                  player, demon));
+  for (const string& minion_name : minions) {
     vector<BoolVar> minion_i;
     for (Role role : kMinionRoles) {
       if (role != shown_token) {  // they are a different minion
@@ -1434,8 +1487,16 @@ void GameState::AddMinionInfo(const string& player,
   }
 }
 
+void GameState::AddMinionInfo(const string& player,
+                              const MinionInfo& minion_info) {
+  const auto& minions = minion_info.minions();
+  AddMinionInfo(player, minion_info.demon(),
+                vector<string>(minions.begin(), minions.end()));
+}
+
 void GameState::AddDemonInfo(const string& player,
-                             const DemonInfo& demon_info) {
+                             absl::Span<const string> minions,
+                             absl::Span<const Role> bluffs) {
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Demon info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
@@ -1450,9 +1511,9 @@ void GameState::AddDemonInfo(const string& player,
       << " needs to be shown the IMP token in order to get demon info";
   // Demon info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
-  CHECK_EQ(demon_info.minions_size(), num_minions_)
+  CHECK_EQ(minions.size(), num_minions_)
       << "Demon info should have " << num_minions_ << " minions";
-  for (const string& minion_name : demon_info.minions()) {
+  for (const string& minion_name : minions) {
     vector<BoolVar> minion_i;
     for (Role role : kMinionRoles) {
       minion_i.push_back(assigned_roles[PlayerIndex(minion_name)][role]);
@@ -1461,12 +1522,22 @@ void GameState::AddDemonInfo(const string& player,
           .WithName(absl::StrFormat("%s learns demon info: %s is a minion",
                                     player, minion_name));
   }
-  CHECK_EQ(demon_info.bluffs_size(), 3) << "Demon info should have 3 bluffs";
-  for (int bluff : demon_info.bluffs()) {
+  CHECK_EQ(bluffs.size(), 3) << "Demon info should have 3 bluffs";
+  for (int bluff : bluffs) {
     model_.AddEquality(roles_in_play_[bluff], model_.FalseVar())
           .WithName(absl::StrFormat("%s learns demon info: bluff %s", player,
                                     Role_Name(bluff)));
   }
+}
+
+void GameState::AddDemonInfo(const string& player,
+                             const DemonInfo& demon_info) {
+  const auto& minions = demon_info.minions();
+  vector<Role> bluffs;
+  for (int bluff : demon_info.bluffs()) {
+    bluffs.push_back(Role(bluff));
+  }
+  AddDemonInfo(player, vector<string>(minions.begin(), minions.end()), bluffs);
 }
 
 void GameState::AddRoleAction(const string& player,
@@ -1520,19 +1591,96 @@ void GameState::AddRoleAction(const string& player,
   }
 }
 
-void GameState::AddWasherwomanInfo(
-    const string& player, const LearnRoleInfo& washerwoman_info) {
+void GameState::AddLearningRoleInfoConstraints(
+    const string& player_name, Role player_role, const string& ping1_name,
+    const string& ping2_name, Role role) {
+  const int player = PlayerIndex(player_name);
+  const int ping1 = PlayerIndex(ping1_name);
+  const int ping2 = PlayerIndex(ping2_name);
+  CHECK_NE(ping1, ping2)
+      << Role_Name(player_role) << " pings need to be different.";
+  const string role_name = Role_Name(player_role);
+  // If player is player_role ^ is not poisoned, then either:
+  // * ping1 is either role or not poisoned Spy/Recluse
+  // * ping2 is either role or not poisoned Spy/Recluse
+  // Because this is night 1, not poisoned <-> not Poisoner picked.
+  const Role false_trigger = IsGoodRole(role) ? SPY : RECLUSE;
+  const BoolVar& is_player_role = night_roles_[0][player][player_role];
+  const BoolVar& ping1_role = night_roles_[0][ping1][role];
+  const BoolVar& ping2_role = night_roles_[0][ping2][role];
+  const BoolVar& ping1_false = night_roles_[0][ping1][false_trigger];
+  const BoolVar& ping2_false = night_roles_[0][ping2][false_trigger];
+  const BoolVar& player_poisoned = poisoner_pick_[0][player];
+  const BoolVar& ping1_poisoned = poisoner_pick_[0][ping1];
+  const BoolVar& ping2_poisoned = poisoner_pick_[0][ping2];
+  BoolVar ping1_healthy_false = model_.NewBoolVar().WithName(
+      absl::StrFormat("%s_ping1_%s_healthy_%s", role_name,
+                      ping1_name, Role_Name(false_trigger)));
+  model_.AddBoolAnd({ping1_false, Not(ping1_poisoned)})
+        .OnlyEnforceIf(ping1_healthy_false)
+        .WithName(absl::StrFormat("%s -> %s ^ !%s", ping1_healthy_false.Name(),
+                                  ping1_false.Name(), ping1_poisoned.Name()));
+  model_.AddBoolOr({Not(ping1_false), ping1_poisoned})
+        .OnlyEnforceIf(Not(ping1_healthy_false))
+        .WithName(absl::StrFormat("!%s -> !%s V %s", ping1_healthy_false.Name(),
+                                  ping1_false.Name(), ping1_poisoned.Name()));
+  BoolVar ping2_healthy_false = model_.NewBoolVar().WithName(
+      absl::StrFormat("%s_ping2_%s_healthy_%s", role_name,
+                      ping2_name, Role_Name(false_trigger)));
+  model_.AddBoolAnd({ping2_false, Not(ping2_poisoned)})
+        .OnlyEnforceIf(ping2_healthy_false)
+        .WithName(absl::StrFormat("%s -> %s ^ !%s", ping2_healthy_false.Name(),
+                                  ping2_false.Name(), ping2_poisoned.Name()));
+  model_.AddBoolOr({Not(ping2_false), ping2_poisoned})
+        .OnlyEnforceIf(Not(ping2_healthy_false))
+        .WithName(absl::StrFormat("!%s -> !%s V %s", ping2_healthy_false.Name(),
+                                  ping2_false.Name(), ping2_poisoned.Name()));
+  model_.AddBoolOr({Not(is_player_role), player_poisoned, ping1_role,
+                    ping2_role, ping1_healthy_false, ping2_healthy_false})
+        .WithName(absl::StrFormat("%s info: !%s V %s V %s V %s V %s V %s",
+                                 role_name, is_player_role.Name(),
+                                 player_poisoned.Name(), ping1_role.Name(),
+                                 ping2_role.Name(), ping1_healthy_false.Name(),
+                                 ping2_healthy_false.Name()));
+}
+
+void GameState::AddWasherwomanInfo(const string& player, const string& ping1,
+                                   const string& ping2, Role role) {
+  ValidateRoleAction(player, WASHERWOMAN);
+  CHECK(IsTownsfolkRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
+  AddLearningRoleInfoConstraints(player, WASHERWOMAN, ping1, ping2, role);
+}
+
+void GameState::AddWasherwomanInfo(
+    const string& player, const LearnRoleInfo& info) {
+  AddWasherwomanInfo(player, info.ping1(), info.ping2(), info.role());
+}
+
+void GameState::AddLibrarianInfo(const string& player, const string& ping1,
+                                 const string& ping2, Role role) {
+  ValidateRoleAction(player, LIBRARIAN);
+  CHECK(IsOutsiderRole(role));
+  BeforeEvent(Event::kStorytellerInteraction);
+  AddLearningRoleInfoConstraints(player, LIBRARIAN, ping1, ping2, role);
 }
 
 void GameState::AddLibrarianInfo(
-    const string& player, const LearnRoleInfo& librarian_info) {
+    const string& player, const LearnRoleInfo& info) {
+  AddLibrarianInfo(player, info.ping1(), info.ping2(), info.role());
+}
+
+void GameState::AddInvestigatorInfo(const string& player, const string& ping1,
+                                    const string& ping2, Role role) {
+  ValidateRoleAction(player, INVESTIGATOR);
+  CHECK(IsMinionRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
+  AddLearningRoleInfoConstraints(player, INVESTIGATOR, ping1, ping2, role);
 }
 
 void GameState::AddInvestigatorInfo(
-    const string& player, const LearnRoleInfo& investigator_info) {
-  BeforeEvent(Event::kStorytellerInteraction);
+    const string& player, const LearnRoleInfo& info) {
+  AddInvestigatorInfo(player, info.ping1(), info.ping2(), info.role());
 }
 
 void GameState::AddChefInfo(const string& player, int chef_info) {
@@ -1544,20 +1692,21 @@ void GameState::AddEmpathInfo(const string& player, int empath_info) {
 }
 
 void GameState::AddFortuneTellerAction(
-    const string& player, const FortuneTellerAction& fortuneteller_action) {
+    const string& player, const string& pick1, const string& pick2, bool yes) {
   BeforeEvent(Event::kStorytellerInteraction);
 }
 
+void GameState::AddFortuneTellerAction(
+    const string& player, const FortuneTellerAction& action) {
+  AddFortuneTellerAction(player, action.pick1(), action.pick2(), action.yes());
+}
+
 void GameState::AddMonkAction(const string& player, const string& monk_action) {
-  BeforeEvent(Event::kStorytellerInteraction);
-  const int monk = PlayerIndex(player);
-  const int target = PlayerIndex(monk_action);
+  ValidateRoleAction(player, MONK);
   CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
-  CHECK_NE(perspective_, OBSERVER) << "Observer cannot see Monk actions";
+  BeforeEvent(Event::kStorytellerInteraction);
+  const int target = PlayerIndex(monk_action);
   if (perspective_ == STORYTELLER) {
-    CHECK_EQ(st_player_roles_[monk], MONK)
-        << player << " needs to be the MONK, got "
-        << Role_Name(st_player_roles_[monk]);
     st_monk_pick_ = target;
   }
   const BoolVar& picked = monk_pick_.back()[target];
@@ -1567,12 +1716,26 @@ void GameState::AddMonkAction(const string& player, const string& monk_action) {
 
 void GameState::AddButlerAction(const string& player,
                                 const string& butler_action) {
+  ValidateRoleAction(player, BUTLER);
+  CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
+  BeforeEvent(Event::kStorytellerInteraction);
+  const int target = PlayerIndex(butler_action);
+  if (perspective_ == STORYTELLER) {
+    st_butler_pick_ = target;
+  }
+  const BoolVar& picked = butler_pick_.back()[target];
+  model_.AddEquality(picked, model_.TrueVar())
+        .WithName(absl::StrFormat("butler action: %s", picked.Name()));
+}
+
+void GameState::AddRavenkeeperInfo(const string& player, const string& pick,
+                                  Role role) {
   BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddRavenkeeperInfo(
-    const string& player, const RavenkeeperInfo& ravenkeeper_info) {
-  BeforeEvent(Event::kStorytellerInteraction);
+    const string& player, const RavenkeeperInfo& info) {
+  AddRavenkeeperInfo(player, info.pick(), info.role());
 }
 
 void GameState::AddUndertakerInfo(const string& player, Role undertaker_info) {
@@ -1593,16 +1756,36 @@ void GameState::AddSlayerAction(const string& player,
   next_event_maybe_death_ = true;
 }
 
+void GameState::ValidateRoleAction(const string& player, Role role) {
+  const string role_name = Role_Name(role);
+  const int player_index = PlayerIndex(player);
+  CHECK(!cur_time_.IsDay) << role_name << " actions only occur at night";
+  CHECK_NE(perspective_, OBSERVER)
+      << absl::StrFormat("Observer cannot see %s actions", role_name);
+  if (perspective_ == STORYTELLER) {
+    const Role st_player_role = st_player_roles_[player_index];
+    CHECK_EQ(st_player_role, role)
+        << absl::StrFormat("%s needs to be the %s, got %s", player,
+                           role_name, Role_Name(st_player_role));
+  } else {  // Player perspective.
+    CHECK_EQ(player_index, perspective_player_)
+        << absl::StrFormat("Only the %s or Storyteller perspective can see "
+                           "%s actions", role_name, role_name);
+    CHECK_EQ(perspective_player_shown_token_, role)
+        << absl::StrFormat("%s needs to be the %s, got %s", player,
+                           role_name,
+                           Role_Name(perspective_player_shown_token_));
+  }
+  CHECK(!night_action_used_[player_index]) << player << " already used ability";
+  night_action_used_[player_index] = true;
+}
+
 void GameState::AddPoisonerAction(const string& player,
                                   const string& poisoner_action) {
+  ValidateRoleAction(player, POISONER);
   BeforeEvent(Event::kStorytellerInteraction);
-  const int poisoner = PlayerIndex(player);
   const int target = PlayerIndex(poisoner_action);
-  CHECK_NE(perspective_, OBSERVER) << "Observer cannot see poisoner actions";
   if (perspective_ == STORYTELLER) {
-    CHECK_EQ(st_player_roles_[poisoner], POISONER)
-        << player << " needs to be the POISONER, got "
-        << Role_Name(st_player_roles_[poisoner]);
     st_poisoner_pick_ = target;
   }
   const BoolVar& picked = poisoner_pick_.back()[target];
@@ -1611,14 +1794,11 @@ void GameState::AddPoisonerAction(const string& player,
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
+  ValidateRoleAction(player, IMP);
   BeforeEvent(Event::kStorytellerInteraction);
-  const int imp = PlayerIndex(player);
   const int target = PlayerIndex(imp_action);
   CHECK_NE(perspective_, OBSERVER) << "Observer cannot see Imp actions";
   if (perspective_ == STORYTELLER) {
-    CHECK_EQ(st_player_roles_[imp], IMP)
-        << player << " needs to be the IMP, got "
-        << Role_Name(st_player_roles_[imp]);
     st_imp_pick_ = target;
   }
   const BoolVar& picked = imp_pick_.back()[target];

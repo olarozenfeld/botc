@@ -80,20 +80,31 @@ class GameState {
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
   void AddClaim(const string& player, Role role);
+  void AddClaimWasherwomanInfo(const string& player, const LearnRoleInfo& info);
   void AddClaimWasherwomanInfo(
-      const string& player, const LearnRoleInfo& washerwoman_info);
+      const string& player, const string& ping1, const string& ping2,
+      Role role);
+  void AddClaimLibrarianInfo(const string& player, const LearnRoleInfo& info);
   void AddClaimLibrarianInfo(
-      const string& player, const LearnRoleInfo& librarian_info);
+      const string& player, const string& ping1, const string& ping2,
+      Role role);
   void AddClaimInvestigatorInfo(
-      const string& player, const LearnRoleInfo& investigator_info);
+      const string& player, const LearnRoleInfo& info);
+  void AddClaimInvestigatorInfo(
+      const string& player, const string& ping1, const string& ping2,
+      Role role);
   void AddClaimChefInfo(const string& player, int chef_info);
   void AddClaimEmpathInfo(const string& player, int empath_info);
   void AddClaimFortuneTellerAction(
       const string& player, const FortuneTellerAction& fortuneteller_action);
+  void AddClaimFortuneTellerAction(
+      const string& player, const string& pick1, const string& pick2, bool yes);
   void AddClaimMonkAction(const string& player, const string& monk_action);
   void AddClaimButlerAction(const string& player, const string& butler_action);
   void AddClaimRavenkeeperInfo(
-      const string& player, const RavenkeeperInfo& ravenkeeper_info);
+      const string& player, const RavenkeeperInfo& info);
+  void AddClaimRavenkeeperInfo(
+      const string& player, const string& pick, Role role);
   void AddClaimUndertakerInfo(const string& player, Role undertaker_info);
 
   // We have no Slayer action claim, because Slayer actions are public
@@ -117,22 +128,33 @@ class GameState {
   void AddShownToken(const string& player, Role role);
   void AddMinionInfo(const string& player,
                      const MinionInfo& minion_info);
+  void AddMinionInfo(const string& player, const string& demon,
+                     absl::Span<const string> minions);
   void AddDemonInfo(const string& player, const DemonInfo& demon_info);
+  void AddDemonInfo(const string& player, absl::Span<const string> minions,
+                    absl::Span<const Role> bluffs);
   void AddRoleAction(const string& player, const RoleAction& role_action);
   void AddWasherwomanInfo(const string& player,
-                          const LearnRoleInfo& washerwoman_info);
-  void AddLibrarianInfo(const string& player,
-                        const LearnRoleInfo& librarian_info);
+                          const LearnRoleInfo& info);
+  void AddWasherwomanInfo(const string& player, const string& ping1,
+                          const string& ping2, Role role);
+  void AddLibrarianInfo(const string& player, const LearnRoleInfo& info);
+  void AddLibrarianInfo(const string& player, const string& ping1,
+                          const string& ping2, Role role);
   void AddInvestigatorInfo(const string& player,
-                           const LearnRoleInfo& investigator_info);
+                           const LearnRoleInfo& info);
+  void AddInvestigatorInfo(const string& player, const string& ping1,
+                          const string& ping2, Role role);
   void AddChefInfo(const string& player, int chef_info);
   void AddEmpathInfo(const string& player, int empath_info);
   void AddFortuneTellerAction(const string& player,
-                              const FortuneTellerAction& fortuneteller_action);
+                              const FortuneTellerAction& action);
+  void AddFortuneTellerAction(const string& player, const string& pick1,
+                              const string& pick2, bool yes);
   void AddMonkAction(const string& player, const string& monk_action);
   void AddButlerAction(const string& player, const string& butler_action);
-  void AddRavenkeeperInfo(const string& player,
-                          const RavenkeeperInfo& ravenkeeper_info);
+  void AddRavenkeeperInfo(const string& player, const RavenkeeperInfo& info);
+  void AddRavenkeeperInfo(const string& player, const string& pick, Role role);
   void AddUndertakerInfo(const string& player, Role undertaker_info);
   void AddSlayerAction(const string& player, const string& slayer_action);
   void AddPoisonerAction(const string& player, const string& poisoner_action);
@@ -220,6 +242,21 @@ class GameState {
   void InitButlerVars();
   void InitRedHerring(const string& name);
   int PlayerIndex(const string& name) const;
+  void BeforeEvent(Event::DetailsCase event_type);
+  void ValidateRoleAction(const string& player, Role role);
+  void AddVirginProcConstraints(bool proc);
+  void AddBaronConstraints();
+  void AddScarletWomanConstraints();
+  void AddImpStarpassConstraints();
+  void AddRoleUniquenessConstraints(
+      const vector<vector<BoolVar>>& player_roles);
+  void AddNoDeathConstraints();
+  void AddGameNotOverConstraints();
+  void AddGoodWonConstraints();
+  void AddEvilWonConstraints();
+  void AddLearningRoleInfoConstraints(
+    const string& player, Role player_role, const string& ping1,
+    const string& ping2, Role role);
 
   // Syntactic-sugar-type helper functions.
   vector<BoolVar> CollectRolesForPlayer(
@@ -242,21 +279,6 @@ class GameState {
                                absl::Span<const Role> roles);
   BoolVar CreatePoisonerPickedRoleVar(Role role, int night, bool only_alive);
   BoolVar CreatePoisonedRoleVar(Role role, int day, bool only_alive);
-
-  // Constraints implementing particular roles.
-  void AddBaronConstraints();
-  void AddScarletWomanConstraints();
-  void AddImpStarpassConstraints();
-
-  // Other constraints.
-  void BeforeEvent(Event::DetailsCase event_type);
-  void AddRoleUniquenessConstraints(
-      const vector<vector<BoolVar>>& player_roles);
-  void AddNoDeathConstraints();
-  void AddVirginProcConstraints(bool proc);
-  void AddGameNotOverConstraints();
-  void AddGoodWonConstraints();
-  void AddEvilWonConstraints();
 
   vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
   void WriteSatSolutionToFile(const CpSolverResponse response,
@@ -290,6 +312,7 @@ class GameState {
   // In player perspective, the player whose perspective this is.
   int perspective_player_;
   Role perspective_player_shown_token_;
+  vector<bool> night_action_used_;  // x role, true when ability was used.
 
   // These variables are only used in the storyteller perspective.
   vector<Role> st_player_roles_;  // Current roles.
@@ -315,9 +338,6 @@ class GameState {
 };
 
 // Syntactic sugar.
-MinionInfo NewMinionInfo(const string& demon);
-DemonInfo NewDemonInfo(absl::Span<const string> minions,
-                       absl::Span<const Role> bluffs);
 SolverRequest FromCurrentRoles(const unordered_map<string, Role>& player_roles);
 SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles);
 

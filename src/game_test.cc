@@ -127,7 +127,7 @@ TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", BARON);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
   g.AddClaim("P3", CHEF);
   g.AddClaim("P4", SAINT);
@@ -147,7 +147,7 @@ TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", BARON);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
   g.AddClaim("P3", CHEF);
   g.AddClaim("P4", SAINT);
@@ -173,7 +173,7 @@ TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", POISONER);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Poisoner, P2 Imp
+  g.AddMinionInfo("P1", "P2", {});  // P1 Poisoner, P2 Imp
   g.AddDay(1);
   g.AddClaim("P3", CHEF);
   g.AddClaim("P4", VIRGIN);
@@ -233,7 +233,7 @@ TEST(WorldEnumeration, DemonPerspective7Players) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", IMP);
-  g.AddDemonInfo("P1", NewDemonInfo({"P2"}, {EMPATH, CHEF, SOLDIER}));
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
   g.AddDay(1);
   g.AddClaim("P1", EMPATH);  // Imp lies
   g.AddClaim("P2", SAINT);  // Minion lies
@@ -257,7 +257,7 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", IMP);
-  g.AddDemonInfo("P1", NewDemonInfo({"P2"}, {EMPATH, CHEF, SOLDIER}));
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
   g.AddDay(1);
   g.AddClaim("P1", EMPATH);  // Imp lies
   g.AddClaim("P2", SAINT);  // Minion lies
@@ -268,6 +268,74 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   g.AddClaim("P7", RAVENKEEPER);
   SolverResponse r = g.SolveGame();
   EXPECT_EQ(r.worlds_size(), 0);
+}
+
+TEST(Investigator, DemonLearnsMinionRole) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);  // Imp lies
+  g.AddClaim("P2", SAINT);  // Minion claims only outsider, so no Baron.
+  g.AddClaim("P3", INVESTIGATOR);
+  g.AddClaimInvestigatorInfo("P3", "P2", "P5", POISONER);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RAVENKEEPER);
+  SolverResponse r = g.SolveGame();
+  // Minion can only be a Poisoner:
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", POISONER}, {"P3", INVESTIGATOR}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(Washerwoman, VirginConfirmsWasherwoman) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", "P2", {});
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", SAINT);
+  g.AddClaim("P3", WASHERWOMAN);
+  g.AddClaimWasherwomanInfo("P3", "P4", "P5", MAYOR);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddNomination("P3", "P4");
+  g.AddExecution("P3");
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", WASHERWOMAN}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", DRUNK}, {"P7", RECLUSE}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
+TEST(Librarian, VirginConfirmsLibrarian) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", "P2", {});
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", SAINT);
+  g.AddClaim("P3", LIBRARIAN);
+  g.AddClaimLibrarianInfo("P3", "P1", "P6", DRUNK);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", MAYOR);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddNomination("P3", "P4");
+  g.AddExecution("P3");
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", LIBRARIAN}, {"P4", VIRGIN},
+       {"P5", MAYOR}, {"P6", DRUNK}, {"P7", RECLUSE}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
 TEST(VotingProcess, ProgressiveVotes) {
@@ -295,7 +363,7 @@ TEST(Virgin, HealthyVirginProc) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", BARON);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
   g.AddClaim("P1", EMPATH);
   g.AddClaim("P2", MAYOR);
@@ -319,7 +387,7 @@ TEST(Virgin, DrunkVirginNonProc) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", BARON);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));  // P1 Baron, P2 Imp
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
   g.AddClaim("P1", EMPATH);
   g.AddClaim("P2", MAYOR);
@@ -343,7 +411,7 @@ TEST(Virgin, PoisonedVirginNonProc) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P1", POISONER);
-  g.AddMinionInfo("P1", NewMinionInfo("P2"));
+  g.AddMinionInfo("P1", "P2", {});
   g.AddPoisonerAction("P1", "P4");
   g.AddDay(1);
   g.AddClaim("P1", EMPATH);
@@ -378,7 +446,7 @@ TEST(ScarletWomanProc, ExecuteImp) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P5", SCARLET_WOMAN);
-  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddMinionInfo("P5", "P1", {});  // P5 SW, P1 Imp
   g.AddDay(1);
   g.AddClaim("P1", SOLDIER);  // Imp lies
   g.AddClaim("P2", MAYOR);
@@ -403,7 +471,7 @@ TEST(ScarletWomanProc, SlayerKillsImp) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
   g.AddShownToken("P5", SCARLET_WOMAN);
-  g.AddMinionInfo("P5", NewMinionInfo("P1"));  // P5 SW, P1 Imp
+  g.AddMinionInfo("P5", "P1", {});  // P5 SW, P1 Imp
   g.AddDay(1);
   g.AddClaim("P1", SOLDIER);  // Imp lies
   g.AddClaim("P2", MAYOR);
