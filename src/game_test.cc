@@ -490,6 +490,22 @@ TEST(ScarletWomanProc, SlayerKillsImp) {
   EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
+TEST(Soldier, InvalidImpKillsHealthySoldier) {
+  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddClaim("P1", WASHERWOMAN);
+  g.AddClaimWasherwomanInfo("P1", "P4", "P5", SOLDIER);
+  g.AddClaim("P2", RECLUSE);
+  g.AddClaim("P3", SAINT);
+  g.AddClaim("P4", BUTLER);
+  g.AddClaim("P5", SOLDIER);
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P5");
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
+}
+
 TEST(GameEndConditions, ExecuteImpGameOver) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
@@ -548,11 +564,6 @@ TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
   request.mutable_starting_assumptions()->add_roles_not_in_play(SCARLET_WOMAN);
   r = g.ValidWorld(request);
   EXPECT_EQ(r.worlds_size(), 0);
-}
-
-TEST(ObserverPerspective, SimpleTest) {
-  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
 }
 
 }  // namespace

@@ -47,7 +47,7 @@ cc_test(
 
 cc_binary(
     name = "botc",
-    srcs = ["botc_main.cc"],
+    srcs = ["main.cc"],
     deps = [
         ":game_lib",
         "@com_google_absl//absl/flags:flag",

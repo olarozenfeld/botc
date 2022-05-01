@@ -279,6 +279,28 @@ class GameState {
                                absl::Span<const Role> roles);
   BoolVar CreatePoisonerPickedRoleVar(Role role, int night, bool only_alive);
   BoolVar CreatePoisonedRoleVar(Role role, int day, bool only_alive);
+  void AddAnd(absl::Span<const BoolVar> literals);
+  void AddOr(absl::Span<const BoolVar> literals);
+  void AddImplication(const BoolVar& v1, const BoolVar& v2);
+  void AddImplicationAnd(const BoolVar& var,
+                         absl::Span<const BoolVar> literals);
+  void AddImplicationOr(const BoolVar& var,
+                        absl::Span<const BoolVar> literals);
+  void AddEquivalenceAnd(const BoolVar& var,
+                         absl::Span<const BoolVar> literals);
+  void AddEquivalenceOr(const BoolVar& var,
+                        absl::Span<const BoolVar> literals);
+  void AddImplicationSum(const BoolVar& var,
+                         absl::Span<const BoolVar> literals, int sum);
+  void AddEquivalenceSum(const BoolVar& var,  // var = Sum(literals)
+                         absl::Span<const BoolVar> literals);
+  void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
+  BoolVar CreateEquivalentVarAnd(
+      absl::Span<const BoolVar> literals, const string& name);
+  BoolVar CreateEquivalentVarOr(
+      absl::Span<const BoolVar> literals, const string& name);
+  BoolVar CreateEquivalentVarSum(  // var = Sum(literals)
+      absl::Span<const BoolVar> literals, const string& name);
 
   vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
   void WriteSatSolutionToFile(const CpSolverResponse response,

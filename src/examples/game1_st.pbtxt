@@ -214,16 +214,7 @@ events {
     role: MONK
   }
 }
-# Fernia claims Slayer and shoots Meterhyl (public info).
-events {
-  claim {
-    player: "Fernia"
-    info {
-      slayer_action: "Merethyl"
-    }
-  }
-}
-# The storyteller marks Fernia's ability as spent.
+# Fernia claims Slayer and shoots Meterhyl (public storyteller interaction).
 events {
   storyteller_interaction {
     player: "Fernia"
