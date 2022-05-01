@@ -170,11 +170,14 @@ class GameState {
     return is_alive_[PlayerIndex(player)];
   }
 
-  Role ClaimedRole(const string& player) {
+  Role ClaimedRole(const string& player) const {
     return claim_of_player_[PlayerIndex(player)];
   }
 
-  vector<string> ClaimingRole(Role role);
+  vector<string> ClaimingRole(Role role) const;
+  bool IsClaiming(const string& player, Role role) const {
+    return IsClaiming(PlayerIndex(player), role);
+  }
 
   string OnTheBlock() const {
     return on_the_block_ == kNoPlayer ? "" : players_[on_the_block_];
@@ -184,7 +187,7 @@ class GameState {
     return execution_ == kNoPlayer ? "" : players_[execution_];
   }
 
-  string ExecitionDeath() const {
+  string ExecutionDeath() const {
     return execution_death_ == kNoPlayer ? "" : players_[execution_death_];
   }
 
@@ -295,6 +298,7 @@ class GameState {
   void AddEquivalenceSum(const BoolVar& var,  // var = Sum(literals)
                          absl::Span<const BoolVar> literals);
   void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
+  void AddContradiction(const string& reason);
   BoolVar CreateEquivalentVarAnd(
       absl::Span<const BoolVar> literals, const string& name);
   BoolVar CreateEquivalentVarOr(
@@ -306,6 +310,10 @@ class GameState {
   void WriteSatSolutionToFile(const CpSolverResponse response,
                               CpModelBuilder* model,
                               const string& filename) const;
+  bool IsClaiming(int player, Role role) const {
+    const auto& ps = players_claiming_[role];
+    return std::find(ps.begin(), ps.end(), player) != ps.end();
+  }
 
   Perspective perspective_;
   vector<string> players_;

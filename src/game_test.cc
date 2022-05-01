@@ -136,11 +136,10 @@ TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   g.AddClaim("P7", MONK);
   g.AddClaim("P1", LIBRARIAN);  // Evil team lie
   g.AddClaim("P2", SLAYER);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", BUTLER},
        {"P6", WASHERWOMAN}, {"P7", MONK}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
@@ -156,7 +155,6 @@ TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
   g.AddClaim("P7", MONK);
   g.AddClaim("P1", LIBRARIAN);  // Evil team lie
   g.AddClaim("P2", SLAYER);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
        {"P6", WASHERWOMAN}, {"P7", DRUNK}},
@@ -166,7 +164,7 @@ TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
        {"P6", WASHERWOMAN}, {"P7", MONK}},
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", DRUNK},
        {"P6", WASHERWOMAN}, {"P7", MONK}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
@@ -182,11 +180,10 @@ TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
   g.AddClaim("P7", MONK);
   g.AddClaim("P1", EMPATH);  // Evil team lie
   g.AddClaim("P2", SLAYER);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SOLDIER}, {"P6", WASHERWOMAN}, {"P7", MONK}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
@@ -199,7 +196,6 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
   g.AddClaim("P3", CHEF);
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", SOLDIER);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", IMP}},
@@ -209,7 +205,7 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
        {"P5", SOLDIER}},
       {{"P1", POISONER}, {"P2", SLAYER}, {"P3", IMP}, {"P4", VIRGIN},
        {"P5", SOLDIER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, MinionPerspectivePoisoner5PlayersFull) {
@@ -222,11 +218,10 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5PlayersFull) {
   g.AddClaim("P3", CHEF);  // Therefore, P1 deduces P2 is the Imp.
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", SOLDIER);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SOLDIER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, DemonPerspective7Players) {
@@ -242,7 +237,6 @@ TEST(WorldEnumeration, DemonPerspective7Players) {
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RAVENKEEPER);  // No true outsider claims, so no Baron
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", SPY}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}},
@@ -250,7 +244,7 @@ TEST(WorldEnumeration, DemonPerspective7Players) {
        {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}},
       {{"P1", IMP}, {"P2", SCARLET_WOMAN}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
@@ -266,8 +260,7 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RAVENKEEPER);
-  SolverResponse r = g.SolveGame();
-  EXPECT_EQ(r.worlds_size(), 0);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
 }
 
 TEST(Investigator, DemonLearnsMinionRole) {
@@ -284,12 +277,11 @@ TEST(Investigator, DemonLearnsMinionRole) {
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RAVENKEEPER);
-  SolverResponse r = g.SolveGame();
   // Minion can only be a Poisoner:
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", POISONER}, {"P3", INVESTIGATOR}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Washerwoman, VirginConfirmsWasherwoman) {
@@ -308,11 +300,10 @@ TEST(Washerwoman, VirginConfirmsWasherwoman) {
   g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", WASHERWOMAN}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", DRUNK}, {"P7", RECLUSE}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Librarian, VirginConfirmsLibrarian) {
@@ -331,11 +322,10 @@ TEST(Librarian, VirginConfirmsLibrarian) {
   g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", LIBRARIAN}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", DRUNK}, {"P7", RECLUSE}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(VotingProcess, ProgressiveVotes) {
@@ -374,13 +364,12 @@ TEST(Virgin, HealthyVirginProc) {
   g.AddClaim("P7", INVESTIGATOR);
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SAINT}, {"P6", DRUNK}, {"P7", INVESTIGATOR}},
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Virgin, DrunkVirginNonProc) {
@@ -398,13 +387,12 @@ TEST(Virgin, DrunkVirginNonProc) {
   g.AddClaim("P7", INVESTIGATOR);
   g.AddNomination("P3", "P4");
   g.AddNoStorytellerAnnouncement();  // No proc.
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", DRUNK},
        {"P5", SAINT}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}},
       {{"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", VIRGIN},
        {"P5", SAINT}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Virgin, PoisonedVirginNonProc) {
@@ -423,11 +411,10 @@ TEST(Virgin, PoisonedVirginNonProc) {
   g.AddClaim("P7", INVESTIGATOR);
   g.AddNomination("P3", "P4");
   g.AddNoStorytellerAnnouncement();  // No proc.
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", EMPATH}, {"P6", SOLDIER}, {"P7", INVESTIGATOR}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Undertaker, HealthyVirginProcDrunkUndertaker) {
@@ -449,11 +436,45 @@ TEST(Undertaker, HealthyVirginProcDrunkUndertaker) {
   g.AddNight(2);
   g.AddDay(2);
   g.AddClaimUndertakerInfo("P7", IMP);  // Storyteller would not do this...
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
+}
+
+TEST(Undertaker, HealthyUndertakerUseless) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", SOLDIER);
+  g.AddClaim("P7", UNDERTAKER);
+  g.AddNomination("P3", "P4");
+  g.AddExecution("P3");
+  g.AddDeath("P3");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddClaimUndertakerInfo("P7", CHEF);  // P7 could still be the DRUNK
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", DRUNK}, {"P7", UNDERTAKER}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
+  g.AddNomination("P1", "P6");
+  g.AddVote({"P1", "P2", "P4"}, "P6");
+  g.AddExecution("P6");
+  g.AddDeath("P6");
+  g.AddNight(3);
+  g.AddDay(3);
+  g.AddClaimUndertakerInfo("P7", DRUNK);  // And we still can't tell:
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Executions, CorrectGameState) {
@@ -462,10 +483,119 @@ TEST(Executions, CorrectGameState) {
   g.AddDay(1);
   g.AddNomination("P1", "P1");
   g.AddVote({"P2", "P3", "P4"}, "P1");
+  EXPECT_EQ(g.OnTheBlock(), "P1");
   g.AddExecution("P1");
+  EXPECT_EQ(g.Execution(), "P1");
+  g.AddDeath("P1");
+  EXPECT_EQ(g.ExecutionDeath(), "P1");
+  EXPECT_EQ(g.NumAlive(), 4);
+  EXPECT_FALSE(g.IsAlive("P1"));
+  g.AddNight(2);
+  g.AddDay(2);
+  EXPECT_EQ(g.NumAlive(), 4);
+  EXPECT_EQ(g.OnTheBlock(), "");
+  EXPECT_EQ(g.Execution(), "");
+  EXPECT_EQ(g.ExecutionDeath(), "");
+}
+
+TEST(NightDeaths, CorrectGameState) {
+  GameState g = GameState::FromObserverPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNight(2);
+  g.AddDay(2);
   g.AddDeath("P1");
   EXPECT_EQ(g.NumAlive(), 4);
   EXPECT_FALSE(g.IsAlive("P1"));
+  EXPECT_EQ(g.NightDeath(), "P1");
+}
+
+TEST(NightDeaths, ImpDeducesPoisoner) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, MONK});
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", SAINT);  // Not a Baron, but other options are all in.
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", RAVENKEEPER);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", FORTUNE_TELLER);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P5");
+  g.AddDay(2);
+  g.AddDeath("P5");  // Imp successfully kills Soldier, hence P2 is Poisoner.
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", POISONER}, {"P3", CHEF}, {"P4", RAVENKEEPER},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", FORTUNE_TELLER}}});
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
+}
+
+TEST(NightDeaths, ImpDeducesSoberMonk) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", RAVENKEEPER);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", MONK);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P6");
+  g.AddDay(2);
+  g.AddNoStorytellerAnnouncement();  // No deaths -> Monk is sober.
+  const SolverRequest& r = FromCurrentRoles({{"P7", MONK}});
+  EXPECT_EQ(g.SolveGame(r).worlds_size(), g.SolveGame().worlds_size());
+}
+
+TEST(NightDeaths, ImpDeducesDrunkSoldier) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", RAVENKEEPER);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", MONK);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P5");
+  g.AddDay(2);
+  g.AddDeath("P5");
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", BARON}, {"P3", CHEF}, {"P4", SAINT},
+       {"P5", DRUNK}, {"P6", SLAYER}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
+}
+
+TEST(Slayer, ImpDeducesDrunkSlayer) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", RAVENKEEPER);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", SLAYER);
+  g.AddClaim("P7", MONK);
+  g.AddSlayerAction("P6", "P1");
+  g.AddNoStorytellerAnnouncement();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", BARON}, {"P3", CHEF}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", DRUNK}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(ScarletWomanProc, ExecuteImp) {
@@ -486,11 +616,10 @@ TEST(ScarletWomanProc, ExecuteImp) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddNight(2);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(ScarletWomanProc, SlayerKillsImp) {
@@ -509,11 +638,10 @@ TEST(ScarletWomanProc, SlayerKillsImp) {
   g.AddSlayerAction("P6", "P1");
   g.AddDeath("P1");
   g.AddNight(2);
-  SolverResponse r = g.SolveGame();
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
-  EXPECT_WORLDS_EQ(r, expected_worlds);
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
 TEST(Soldier, InvalidImpKillsHealthySoldier) {
@@ -526,6 +654,9 @@ TEST(Soldier, InvalidImpKillsHealthySoldier) {
   g.AddClaim("P3", SAINT);
   g.AddClaim("P4", BUTLER);
   g.AddClaim("P5", SOLDIER);
+  const SolverRequest& r = FromCurrentRoles({{"P5", SOLDIER}});
+  // P5 is SOLDIER in all worlds:
+  EXPECT_EQ(g.SolveGame(r).worlds_size(), g.SolveGame().worlds_size());
   g.AddNight(2);
   g.AddDay(2);
   g.AddDeath("P5");

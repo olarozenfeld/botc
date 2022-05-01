@@ -115,7 +115,7 @@ vector<BoolVar> Not(absl::Span<const BoolVar> literals) {
 string ConstraintName(const string& separator,
                       absl::Span<const BoolVar> literals) {
   if (literals.size() == 0) {
-    return "false";
+    return "0";
   }
   string name = literals[0].Name();
   for (int i = 1; i < literals.size(); ++i) {
@@ -163,6 +163,8 @@ string Time::ToString() const {
 // * Validate night order.
 // * Unit test Imp starpass.
 // * Solver optimization ideas:
+//   * Check whether I have duplicate variables or constraints (and maybe cache
+//     them).
 //   * Require full claims before solve, and defer constraint building until
 //     after solve (will reduce some constraints).
 
@@ -201,7 +203,7 @@ int GameState::PlayerIndex(const string& name) const {
   return it->second;
 }
 
-vector<string> GameState::ClaimingRole(Role role) {
+vector<string> GameState::ClaimingRole(Role role) const {
   vector<string> result;
   for (int i : players_claiming_[role]) {
     result.push_back(players_[i]);
@@ -274,28 +276,28 @@ void GameState::AddImplication(const BoolVar& v1, const BoolVar& v2) {
 
 void GameState::AddImplicationAnd(const BoolVar& var,
                                   absl::Span<const BoolVar> literals) {
-  const string name = AndConstraintName(var, literals);
   if (literals.size() == 0) {
-    model_.AddImplication(var, model_.FalseVar()).WithName(name);
+    model_.FixVariable(var, false);
     return;
   }
+  const string name = AndConstraintName(var, literals);
   model_.AddBoolAnd(literals).OnlyEnforceIf(var).WithName(name);
 }
 
 void GameState::AddImplicationOr(const BoolVar& var,
                                  absl::Span<const BoolVar> literals) {
-  const string name = OrConstraintName(var, literals);
   if (literals.size() == 0) {
-    model_.AddImplication(var, model_.FalseVar()).WithName(name);
+    model_.FixVariable(var, false);
     return;
   }
+  const string name = OrConstraintName(var, literals);
   model_.AddBoolOr(literals).OnlyEnforceIf(var).WithName(name);
 }
 
 void GameState::AddImplicationSum(const BoolVar& var,
                                   absl::Span<const BoolVar> literals, int sum) {
   const string name = absl::StrFormat(
-      "%s = %d", ConstraintName("+", var, literals), sum);
+      "%s -> %s = %d", var.Name(), ConstraintName("+", literals), sum);
   model_.AddEquality(LinearExpr::Sum(literals), sum)
       .OnlyEnforceIf(var)
       .WithName(name);
@@ -322,8 +324,13 @@ void GameState::AddEquivalenceSum(const BoolVar& var,
 
 void GameState::AddEqualitySum(absl::Span<const BoolVar> literals, int sum) {
   const string name = absl::StrFormat(
-      "%s = %d", ConstraintName("+", literals), sum);
+      "%d = %s", sum, ConstraintName("+", literals));
   model_.AddEquality(LinearExpr::Sum(literals), sum).WithName(name);
+}
+
+void GameState::AddContradiction(const string& reason) {
+  model_.AddBoolOr({model_.FalseVar()})
+        .WithName(absl::StrCat("Contradiction: ", reason));
 }
 
 BoolVar GameState::CreateEquivalentVarAnd(
@@ -417,7 +424,7 @@ void GameState::InitNightRoleVars() {
   }
   vector<vector<BoolVar>> night_roles(num_players_);
   for (int i = 0; i < num_players_; ++i) {
-    night_roles[i].push_back(model_.FalseVar());  // dummy variable
+    night_roles[i].push_back(model_.FalseVar().WithName("0"));  // dummy var
     for (Role role : kAllRoles) {
       // Variable/constraint names are for debugging only.
       string name = absl::StrFormat(
@@ -468,7 +475,7 @@ void GameState::AddRoleUniquenessConstraints(
   for (int i = 0; i < num_players_; ++i) {
     string name = absl::StrFormat("Player %s has unique role %s", players_[i],
                                   time);
-    model_.AddExactlyOne(player_roles[i]).WithName(name);
+    AddEqualitySum(player_roles[i], 1);
   }
   // Each role other than IMP assigned to at most one player:
   for (Role role : kAllRoles) {
@@ -484,9 +491,7 @@ void GameState::AddRoleUniquenessConstraints(
     model_.AddAtMostOne(player_is_role).WithName(name);
   }
   // There needs to be exactly one alive IMP (before game ends):
-  vector<BoolVar> alive_imp = CollectAliveRoles(player_roles, {IMP});
-  const string name = absl::StrFormat("Exactly 1 alive Imp on %s", time);
-  model_.AddExactlyOne(alive_imp).WithName(name);
+  AddEqualitySum(CollectAliveRoles(player_roles, {IMP}), 1);
 }
 
 void GameState::AddBaronConstraints() {
@@ -511,9 +516,7 @@ void GameState::InitShownTokenVars() {
     }
     shown_token_.push_back(shown_token);
     // Every player was shown exactly one token:
-    model_.AddExactlyOne(shown_token)
-          .WithName(absl::StrFormat("Player %s shown exactly one token",
-                                    players_[i]));
+    AddEqualitySum(shown_token, 1);
     // No one is shown the DRUNK token:
     model_.FixVariable(shown_token[DRUNK], false);
   }
@@ -528,7 +531,7 @@ void GameState::InitShownTokenVars() {
     model_.AddAtMostOne(shown_role).WithName(name);
     if (role == IMP) {
       // Exactly one player is shown the Imp.
-      model_.AddExactlyOne(shown_role).WithName("One player is shown IMP");
+      AddEqualitySum(shown_role, 1);
     }
   }
   const auto& assigned_roles = night_roles_[0];
@@ -905,11 +908,9 @@ vector<BoolVar> GameState::CollectRolesForPlayer(
       // Optimization for the open strategy: for good roles, we only need to
       // consider players who claimed the role. This, of course, applies only
       // starting day 1 (we rely on everyone claiming on start of day 1):
-      if (IsGoodRole(role) && (cur_time_.IsDay || cur_time_.Count > 1)) {
-        const auto& pp = players_claiming_[role];
-        if (std::find(pp.begin(), pp.end(), player) == pp.end()) {
-          continue;
-        }
+      if (IsGoodRole(role) && (cur_time_.IsDay || cur_time_.Count > 1) &&
+          !IsClaiming(player, role)) {
+        continue;
       }
       result.push_back(from[player][role]);
     }
@@ -1137,13 +1138,11 @@ void GameState::AddDeath(const string& name) {
     const BoolVar poisoned = CreatePoisonedRoleVar(
         SLAYER, cur_time_.Count, true);
     // Open strategy optimization: the actual Recluse would hardclaim day 1.
-    const auto& recluses = players_claiming_[RECLUSE];
-    if (std::find(recluses.begin(), recluses.end(), target) != recluses.end()) {
-      const BoolVar& recluse = day_roles_.back()[target][RECLUSE];
+    if (IsClaiming(target, RECLUSE)) {
       BoolVar poisoned_recluse = CreatePoisonedRoleVar(
           RECLUSE, cur_time_.Count, true);
       BoolVar healthy_recluse = CreateEquivalentVarAnd(
-        {recluse, Not(poisoned_recluse)},
+        {day_roles_.back()[target][RECLUSE], Not(poisoned_recluse)},
         absl::StrFormat("%s_healthy_recluse", players_[target]));
       BoolVar target_proc = CreateEquivalentVarSum(
           {healthy_recluse, imp},
@@ -1153,6 +1152,8 @@ void GameState::AddDeath(const string& name) {
       AddAnd({is_slayer, imp, Not(poisoned)});
     }
   } else {
+    CHECK_EQ(night_death_, kNoPlayer)
+        << "No two night deaths in Trouble Brewing";
     // Must be a night death, which is either an Imp pick, or a Mayor bounce.
     night_death_ = death;
     const auto& poisoner_pick = poisoner_pick_.back();
@@ -1184,9 +1185,7 @@ void GameState::AddDeath(const string& name) {
                          {Not(night_roles_[0][i][MAYOR]), Not(picked)});
       }
     }
-    model_.AddExactlyOne(picks)
-          .WithName(absl::StrFormat("%s died %s -> Imp pick V Mayor bounce",
-                                    name, time));
+    AddEqualitySum(picks, 1);
   }
   is_alive_[death] = false;
   --num_alive_;
@@ -1425,11 +1424,9 @@ void GameState::AddShownToken(const string& player, Role role) {
     perspective_player_shown_token_ = role;
   }
   if (cur_time_.Count == 1) {
-    model_.AddEquality(shown_token_[p_index][role], model_.TrueVar())
-          .WithName(absl::StrFormat("%s shown token %s night 1", player,
-                                    Role_Name(role)));
+    model_.FixVariable(shown_token_[p_index][role], true);
   } else {  // role is IMP
-    // TODO(olaola): fill this case (starpass occurred).
+    // TODO(olaola): fill this case (starpass/SW proc occurred).
   }
 }
 
@@ -1463,9 +1460,7 @@ void GameState::AddMinionInfo(const string& player, const string& demon,
   // Minion info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
   const int demon_index = PlayerIndex(demon);
-  model_.AddEquality(assigned_roles[demon_index][IMP], model_.TrueVar())
-        .WithName(absl::StrFormat("%s learns minion info: %s is the demon",
-                                  player, demon));
+  model_.FixVariable(assigned_roles[demon_index][IMP], true);
   for (const string& minion_name : minions) {
     vector<BoolVar> minion_i;
     for (Role role : kMinionRoles) {
@@ -1473,9 +1468,7 @@ void GameState::AddMinionInfo(const string& player, const string& demon,
         minion_i.push_back(assigned_roles[PlayerIndex(minion_name)][role]);
       }
     }
-    model_.AddExactlyOne(minion_i)
-          .WithName(absl::StrFormat("%s learns minion info: %s is a minion",
-                                    player, minion_name));
+    AddEqualitySum(minion_i, 1);
   }
 }
 
@@ -1510,15 +1503,13 @@ void GameState::AddDemonInfo(const string& player,
     for (Role role : kMinionRoles) {
       minion_i.push_back(assigned_roles[PlayerIndex(minion_name)][role]);
     }
-    model_.AddExactlyOne(minion_i)
-          .WithName(absl::StrFormat("%s learns demon info: %s is a minion",
-                                    player, minion_name));
+    AddEqualitySum(minion_i, 1);
   }
   CHECK_EQ(bluffs.size(), 3) << "Demon info should have 3 bluffs";
-  for (int bluff : bluffs) {
-    model_.AddEquality(roles_in_play_[bluff], model_.FalseVar())
-          .WithName(absl::StrFormat("%s learns demon info: bluff %s", player,
-                                    Role_Name(bluff)));
+  for (Role bluff : bluffs) {
+    CHECK(IsGoodRole(bluff))
+        << "Expected demon bluffs good roles only, got " << Role_Name(bluff);
+    model_.FixVariable(roles_in_play_[bluff], false);
   }
 }
 
@@ -1682,9 +1673,7 @@ void GameState::AddMonkAction(const string& player, const string& monk_action) {
   if (perspective_ == STORYTELLER) {
     st_monk_pick_ = target;
   }
-  const BoolVar& picked = monk_pick_.back()[target];
-  model_.AddEquality(picked, model_.TrueVar())
-        .WithName(absl::StrFormat("monk action: %s", picked.Name()));
+  model_.FixVariable(monk_pick_.back()[target], true);
 }
 
 void GameState::AddButlerAction(const string& player,
@@ -1696,9 +1685,7 @@ void GameState::AddButlerAction(const string& player,
   if (perspective_ == STORYTELLER) {
     st_butler_pick_ = target;
   }
-  const BoolVar& picked = butler_pick_.back()[target];
-  model_.AddEquality(picked, model_.TrueVar())
-        .WithName(absl::StrFormat("butler action: %s", picked.Name()));
+  model_.FixVariable(butler_pick_.back()[target], true);
 }
 
 void GameState::AddRavenkeeperInfo(const string& player, const string& pick,
@@ -1770,9 +1757,7 @@ void GameState::AddPoisonerAction(const string& player,
   if (perspective_ == STORYTELLER) {
     st_poisoner_pick_ = target;
   }
-  const BoolVar& picked = poisoner_pick_.back()[target];
-  model_.AddEquality(picked, model_.TrueVar())
-        .WithName(absl::StrFormat("Poisoner action: %s", picked.Name()));
+  model_.FixVariable(poisoner_pick_.back()[target], true);
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
@@ -1783,9 +1768,7 @@ void GameState::AddImpAction(const string& player, const string& imp_action) {
   if (perspective_ == STORYTELLER) {
     st_imp_pick_ = target;
   }
-  const BoolVar& picked = imp_pick_.back()[target];
-  model_.AddEquality(picked, model_.TrueVar())
-        .WithName(absl::StrFormat("Imp action: %s", picked.Name()));
+  model_.FixVariable(imp_pick_.back()[target], true);
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
@@ -1846,20 +1829,15 @@ void GameState::AddGoodWonConstraints() {
   const auto& day_roles = day_roles_.back();
   if (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer) {
     if (night_death_ == kNoPlayer) {
-        model_.AddBoolOr({model_.FalseVar()}).WithName(
-            "Contradiction: no day or night kill, yet Good wins");
+        AddContradiction("No day or night kill, yet Good wins");
         return;
     }
     // The silly suicide case:
-    model_.AddEquality(day_roles[night_death_][IMP], model_.TrueVar())
-          .WithName("Imp kills themselves");
-    // The reason we use AddEquality and not FixVariable is debugability.
+    model_.FixVariable(day_roles[night_death_][IMP], true);
     for (int i = 0; i < num_players_; ++i) {
       if (is_alive_[i]) {
         // Otherwise they would catch the starpass.
-        model_.AddEquality(is_evil_[i], model_.FalseVar())
-            .WithName(absl::StrFormat("Player %s cannot catch starpass",
-                                      players_[i]));
+        model_.FixVariable(is_evil_[i], false);
       }
     }
     return;
@@ -1889,12 +1867,10 @@ void GameState::AddEvilWonConstraints() {
     return;
   }
   if (num_alive_ > 2) {
-    model_.AddBoolOr({model_.FalseVar()}).WithName(
-        "Contradiction: no execution and >=3 players alive, yet Evil wins");
+    AddContradiction("No execution and >=3 players alive, yet Evil wins");
     return;
   }
-  vector<BoolVar> alive_imp = CollectAliveRoles(day_roles, {IMP});
-  model_.AddExactlyOne(alive_imp).WithName("Evil wins -> an alive IMP exists");
+  AddEqualitySum(CollectAliveRoles(day_roles, {IMP}), 1);
 }
 
 BoolVar GameState::CreatePoisonerPickedRoleVar(
@@ -1925,11 +1901,9 @@ BoolVar GameState::CreatePoisonerPickedRoleVar(
   BoolVar role_picked = model_.NewBoolVar().WithName(
       absl::StrFormat("poisoner_picked_%s_night_%d", Role_Name(role), night));
   if (picked_role_players.size() == 0) {
-    model_.AddEquality(role_picked, model_.FalseVar())
-          .WithName(absl::StrFormat("%s has no options", role_picked.Name()));
+    model_.FixVariable(role_picked, false);
   } else {
-    model_.AddEquality(LinearExpr::Sum(picked_role_players), role_picked)
-          .WithName(absl::StrFormat("%s definition", role_picked.Name()));
+    AddEquivalenceSum(role_picked, picked_role_players);
   }
   return role_picked;
 }
@@ -1981,28 +1955,28 @@ void GameState::AddNoDeathConstraints() {
   cases.push_back(imp_poisoned);
   if (players_claiming_[MONK].size() > 0) {
     vector<BoolVar> same_picks;
+    const auto& monk_picks = monk_pick_.back();
     for (int i = 0; i < num_players_; ++i) {
       if (is_alive_[i]) {
         same_picks.push_back(CreateEquivalentVarAnd(
-            {imp_pick_.back()[i], monk_pick_.back()[i]},
+            {imp_picks[i], monk_picks[i]},
             absl::StrFormat("imp_and_monk_pick_%s_%s", players_[i], time)));
       }
     }
-    BoolVar picks_equal = model_.NewBoolVar().WithName(
-        absl::StrFormat("imp_and_monk_pick_same_%s", time));
-    model_.AddEquality(LinearExpr::Sum(same_picks), picks_equal)
-          .WithName(absl::StrFormat("%s definition", picks_equal.Name()));
+    BoolVar picks_equal = CreateEquivalentVarSum(
+        same_picks, absl::StrFormat("imp_and_monk_pick_same_%s", time));
     BoolVar monk_poisoned = CreatePoisonerPickedRoleVar(
         MONK, cur_time_.Count, true);
     cases.push_back(CreateEquivalentVarAnd(
         {Not(monk_poisoned), picks_equal},
         absl::StrFormat("imp_pick_healthy_monk_protected_%s", time)));
-    // Soldier protection: (optimized for open strategy)
-    for (int i : players_claiming_[SOLDIER]) {
-      cases.push_back(CreateEquivalentVarAnd(
-        {night_roles_[0][i][SOLDIER], Not(poisoner_pick_.back()[i])},
-        absl::StrFormat("healthy_soldier_%s_%s", players_[i], time)));
-    }
+  }
+  // Soldier protection: (optimized for open strategy):
+  const auto& poisoner_pick = poisoner_pick_.back();
+  for (int i : players_claiming_[SOLDIER]) {
+    cases.push_back(CreateEquivalentVarAnd(
+      {imp_picks[i], night_roles_[0][i][SOLDIER], Not(poisoner_pick[i])},
+      absl::StrFormat("imp_picks_healthy_soldier_%s_%s", players_[i], time)));
   }
   AddOr(cases);
 }
@@ -2016,10 +1990,9 @@ void GameState::AddGameNotOverConstraints() {
   // * A non-poisoned Saint was executed, OR
   // * 2 players are alive, one of them the Imp.
   if (num_alive_ <= 2) {
-    const string name = absl::StrFormat(
-        "Contradiction: %d players alive on %s, yet game is not over",
-        num_alive_, cur_time_.ToString());
-    model_.AddBoolOr({model_.FalseVar()}).WithName(name);
+    AddContradiction(absl::StrFormat(
+        "%d players alive on %s, yet game is not over",
+        num_alive_, cur_time_.ToString()));
     return;
   }
   const auto& roles = day_roles_.back();
