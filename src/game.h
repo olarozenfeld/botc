@@ -323,6 +323,7 @@ class GameState {
   int execution_;  // A player index (or kNoPlayer) for last day's executee.
   // Not the same to execution_, because executing dead players is valid.
   int execution_death_;  // A player index for last day's execution death.
+  int prev_execution_;  // Maybe store the whole history?
   int slayer_death_;  // A player index (or kNoPlayer) for last day Slayer kill.
   int night_death_;  // A player index (or kNoPlayer) for last night kill.
   bool next_event_maybe_victory_;  // Whether the next event can be a Victory.

@@ -430,6 +430,32 @@ TEST(Virgin, PoisonedVirginNonProc) {
   EXPECT_WORLDS_EQ(r, expected_worlds);
 }
 
+TEST(Undertaker, HealthyVirginProcDrunkUndertaker) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", MAYOR);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", VIRGIN);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", SOLDIER);
+  g.AddClaim("P7", UNDERTAKER);
+  g.AddNomination("P3", "P4");
+  g.AddExecution("P3");
+  g.AddDeath("P3");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddClaimUndertakerInfo("P7", IMP);  // Storyteller would not do this...
+  SolverResponse r = g.SolveGame();
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
+       {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
+  EXPECT_WORLDS_EQ(r, expected_worlds);
+}
+
 TEST(Executions, CorrectGameState) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);

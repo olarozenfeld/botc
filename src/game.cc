@@ -215,11 +215,12 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       player_used_slayer_shot_(num_players_),
       player_has_been_nominated_(num_players_),
       num_votes_(0), on_the_block_(kNoPlayer), execution_(kNoPlayer),
-      execution_death_(kNoPlayer), slayer_death_(kNoPlayer),
-      night_death_(kNoPlayer), next_event_maybe_victory_(false),
-      next_event_maybe_death_(false), next_event_maybe_execution_(false),
-      victory_(TEAM_UNSPECIFIED), claim_of_player_(num_players_),
-      players_claiming_(Role_ARRAYSIZE), perspective_player_(kNoPlayer),
+      execution_death_(kNoPlayer), prev_execution_(kNoPlayer),
+      slayer_death_(kNoPlayer), night_death_(kNoPlayer),
+      next_event_maybe_victory_(false), next_event_maybe_death_(false),
+      next_event_maybe_execution_(false), victory_(TEAM_UNSPECIFIED),
+      claim_of_player_(num_players_), players_claiming_(Role_ARRAYSIZE),
+      perspective_player_(kNoPlayer),
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
       night_action_used_(num_players_),
       st_player_roles_(num_players_), st_shown_tokens_(num_players_),
@@ -640,6 +641,7 @@ void GameState::AddDay(int count) {
     next_event_maybe_death_ = true;  // Night death announcements.
   }
   num_votes_ = 0;
+  prev_execution_ = execution_death_;
   on_the_block_ = execution_ = execution_death_ = slayer_death_ = night_death_ =
       kNoPlayer;
 }
@@ -1365,9 +1367,17 @@ void GameState::AddClaimRavenkeeperInfo(const string& player,
   AddClaimRavenkeeperInfo(player, info.pick(), info.role());
 }
 
-void GameState::AddClaimUndertakerInfo(const string& player,
-                                       Role undertaker_info) {
+void GameState::AddClaimUndertakerInfo(const string& player, Role info) {
   BeforeEvent(Event::kClaim);
+  CHECK_EQ(ClaimedRole(player), UNDERTAKER)
+      << player << " needs to claim UNDERTAKER before claiming info";
+  CHECK_NE(prev_execution_, kNoPlayer);  // Otherwise noone to exhume.
+  CHECK_NE(info, ROLE_UNSPECIFIED) << "Expected valid Undertaker info";
+  const int i = PlayerIndex(player);
+  BoolVar poisoned = CreatePoisonedRoleVar(
+      UNDERTAKER, cur_time_.Count - 1, true);
+  const BoolVar& correct = night_roles_.back()[prev_execution_][info];
+  AddImplicationOr(night_roles_[0][i][UNDERTAKER], {poisoned, correct});
 }
 
 // The open Spy play.
@@ -1701,8 +1711,16 @@ void GameState::AddRavenkeeperInfo(
   AddRavenkeeperInfo(player, info.pick(), info.role());
 }
 
-void GameState::AddUndertakerInfo(const string& player, Role undertaker_info) {
+void GameState::AddUndertakerInfo(const string& player, Role info) {
   BeforeEvent(Event::kStorytellerInteraction);
+  ValidateRoleAction(player, UNDERTAKER);
+  CHECK_NE(execution_death_, kNoPlayer);  // Otherwise noone to exhume.
+  CHECK_NE(info, ROLE_UNSPECIFIED) << "Expected valid Undertaker info";
+  const int i = PlayerIndex(player);
+  BoolVar poisoned = CreatePoisonedRoleVar(
+      UNDERTAKER, cur_time_.Count - 1, true);
+  const BoolVar& correct = night_roles_.back()[execution_death_][info];
+  AddImplicationOr(night_roles_[0][i][UNDERTAKER], {poisoned, correct});
 }
 
 void GameState::AddSlayerAction(const string& player,
@@ -1723,6 +1741,7 @@ void GameState::ValidateRoleAction(const string& player, Role role) {
   const string role_name = Role_Name(role);
   const int player_index = PlayerIndex(player);
   CHECK(!cur_time_.IsDay) << role_name << " actions only occur at night";
+  CHECK(is_alive_[player_index]) << "Dead players don't get role actions";
   CHECK_NE(perspective_, OBSERVER)
       << absl::StrFormat("Observer cannot see %s actions", role_name);
   if (perspective_ == STORYTELLER) {
