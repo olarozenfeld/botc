@@ -81,30 +81,27 @@ class GameState {
   void AddClaim(const Claim& claim);
   void AddClaim(const string& player, Role role);
   void AddClaimWasherwomanInfo(const string& player, const LearnRoleInfo& info);
-  void AddClaimWasherwomanInfo(
-      const string& player, const string& ping1, const string& ping2,
-      Role role);
+  void AddClaimWasherwomanInfo(const string& player, const string& ping1,
+                               const string& ping2, Role role);
   void AddClaimLibrarianInfo(const string& player, const LearnRoleInfo& info);
-  void AddClaimLibrarianInfo(
-      const string& player, const string& ping1, const string& ping2,
-      Role role);
-  void AddClaimInvestigatorInfo(
-      const string& player, const LearnRoleInfo& info);
-  void AddClaimInvestigatorInfo(
-      const string& player, const string& ping1, const string& ping2,
-      Role role);
+  void AddClaimLibrarianInfo(const string& player, const string& ping1,
+                             const string& ping2, Role role);
+  void AddClaimInvestigatorInfo(const string& player,
+                                const LearnRoleInfo& info);
+  void AddClaimInvestigatorInfo(const string& player, const string& ping1,
+                                const string& ping2, Role role);
   void AddClaimChefInfo(const string& player, int chef_info);
   void AddClaimEmpathInfo(const string& player, int empath_info);
   void AddClaimFortuneTellerAction(
       const string& player, const FortuneTellerAction& fortuneteller_action);
-  void AddClaimFortuneTellerAction(
-      const string& player, const string& pick1, const string& pick2, bool yes);
+  void AddClaimFortuneTellerAction(const string& player, const string& pick1,
+                                   const string& pick2, bool yes);
   void AddClaimMonkAction(const string& player, const string& monk_action);
   void AddClaimButlerAction(const string& player, const string& butler_action);
-  void AddClaimRavenkeeperInfo(
-      const string& player, const RavenkeeperInfo& info);
-  void AddClaimRavenkeeperInfo(
-      const string& player, const string& pick, Role role);
+  void AddClaimRavenkeeperAction(const string& player,
+                                 const RavenkeeperAction& action);
+  void AddClaimRavenkeeperAction(const string& player, const string& pick,
+                                 Role role);
   void AddClaimUndertakerInfo(const string& player, Role undertaker_info);
 
   // We have no Slayer action claim, because Slayer actions are public
@@ -153,8 +150,10 @@ class GameState {
                               const string& pick2, bool yes);
   void AddMonkAction(const string& player, const string& monk_action);
   void AddButlerAction(const string& player, const string& butler_action);
-  void AddRavenkeeperInfo(const string& player, const RavenkeeperInfo& info);
-  void AddRavenkeeperInfo(const string& player, const string& pick, Role role);
+  void AddRavenkeeperAction(const string& player,
+                            const RavenkeeperAction& action);
+  void AddRavenkeeperAction(const string& player, const string& pick,
+                            Role role);
   void AddUndertakerInfo(const string& player, Role undertaker_info);
   void AddSlayerAction(const string& player, const string& slayer_action);
   void AddPoisonerAction(const string& player, const string& poisoner_action);
@@ -299,12 +298,12 @@ class GameState {
                          absl::Span<const BoolVar> literals);
   void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
   void AddContradiction(const string& reason);
-  BoolVar CreateEquivalentVarAnd(
-      absl::Span<const BoolVar> literals, const string& name);
-  BoolVar CreateEquivalentVarOr(
-      absl::Span<const BoolVar> literals, const string& name);
-  BoolVar CreateEquivalentVarSum(  // var = Sum(literals)
-      absl::Span<const BoolVar> literals, const string& name);
+  BoolVar CreateEquivalentVarAnd(absl::Span<const BoolVar> literals,
+                                 const string& name);
+  BoolVar CreateEquivalentVarOr(absl::Span<const BoolVar> literals,
+                                const string& name);
+  BoolVar CreateEquivalentVarSum(absl::Span<const BoolVar> literals,
+                                 const string& name);
 
   vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
   void WriteSatSolutionToFile(const CpSolverResponse response,
@@ -343,7 +342,8 @@ class GameState {
   // In player perspective, the player whose perspective this is.
   int perspective_player_;
   Role perspective_player_shown_token_;
-  vector<bool> night_action_used_;  // x role, true when ability was used.
+  vector<bool> night_action_used_;  // x player, true when ability was used.
+  vector<bool> deferred_constraints_;  // x player.
 
   // These variables are only used in the storyteller perspective.
   vector<Role> st_player_roles_;  // Current roles.

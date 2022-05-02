@@ -88,7 +88,7 @@ message FortuneTellerAction {
   bool yes = 3;
 }
 
-message RavenkeeperInfo {
+message RavenkeeperAction {
   string pick = 1;
   Role role = 2;
 }
@@ -131,7 +131,7 @@ message RoleAction {
     FortuneTellerAction fortuneteller_action = 6;
     string monk_action = 7;
     string butler_action = 8;
-    RavenkeeperInfo ravenkeeper_info = 9;
+    RavenkeeperAction ravenkeeper_action = 9;
     Role undertaker_info = 10;
     string slayer_action = 11;
     string poisoner_action = 12;

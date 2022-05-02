@@ -627,7 +627,7 @@ TEST(NightDeaths, MayorBounceToMonkProtectedTarget) {
   g.AddMonkAction("P3", "P7");  // Monk is protecting P7, not the Mayor.
   g.AddImpAction("P1", "P4");  // Imp tries to kill the Mayor.
   g.AddDay(2);
-  g.AddNoStorytellerAnnouncement();  // Kill bounced to P7.
+  g.AddClaimMonkAction("P3", "P7");  // Kill bounced to P7.
   EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
 }
 
@@ -650,6 +650,100 @@ TEST(NightDeaths, MayorBounce) {
   g.AddDay(2);
   g.AddDeath("P5");
   EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(Ravenkeeper, LearnsTrueRole) {
+  GameState g = FromRoles({IMP, BARON, RAVENKEEPER, RECLUSE, SAINT});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", BARON);
+  g.AddShownToken("P3", RAVENKEEPER);
+  g.AddShownToken("P4", RECLUSE);
+  g.AddShownToken("P5", SAINT);
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", SLAYER);
+  g.AddClaim("P3", RAVENKEEPER);
+  g.AddClaim("P4", RECLUSE);
+  g.AddClaim("P5", SAINT);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P3");
+  g.AddRavenkeeperAction("P3", "P2", BARON);
+  g.AddDay(2);
+  g.AddDeath("P3");
+  g.AddClaimRavenkeeperAction("P3", "P2", BARON);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(Ravenkeeper, DrunkRavenkeeperLearnsFalseRole) {
+  GameState g = FromRoles({IMP, BARON, DRUNK, SLAYER, SAINT});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", BARON);
+  g.AddShownToken("P3", RAVENKEEPER);
+  g.AddShownToken("P4", SLAYER);
+  g.AddShownToken("P5", SAINT);
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", UNDERTAKER);
+  g.AddClaim("P3", RAVENKEEPER);
+  g.AddClaim("P4", SLAYER);
+  g.AddClaim("P5", SAINT);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P3");
+  g.AddRavenkeeperAction("P3", "P2", UNDERTAKER);
+  g.AddDay(2);
+  g.AddDeath("P3");
+  g.AddClaimRavenkeeperAction("P3", "P2", UNDERTAKER);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(Ravenkeeper, PoisonedRavenkeeperLearnsFalseRole) {
+  GameState g = FromRoles({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", POISONER);
+  g.AddShownToken("P3", RAVENKEEPER);
+  g.AddShownToken("P4", SLAYER);
+  g.AddShownToken("P5", UNDERTAKER);
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", SAINT);
+  g.AddClaim("P3", RAVENKEEPER);
+  g.AddClaim("P4", SLAYER);
+  g.AddClaim("P5", UNDERTAKER);
+  g.AddNight(2);
+  g.AddPoisonerAction("P2", "P3");
+  g.AddImpAction("P1", "P3");
+  g.AddRavenkeeperAction("P3", "P2", SAINT);
+  g.AddDay(2);
+  g.AddDeath("P3");
+  g.AddClaimRavenkeeperAction("P3", "P2", SAINT);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(Ravenkeeper, InvalidRavenkeeperLearnsFalseRole) {
+  GameState g = FromRoles({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", POISONER);
+  g.AddShownToken("P3", RAVENKEEPER);
+  g.AddShownToken("P4", SLAYER);
+  g.AddShownToken("P5", UNDERTAKER);
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", SAINT);
+  g.AddClaim("P3", RAVENKEEPER);
+  g.AddClaim("P4", SLAYER);
+  g.AddClaim("P5", UNDERTAKER);
+  g.AddNight(2);
+  g.AddPoisonerAction("P2", "P4");  // Ravenkeeper is healthy.
+  g.AddImpAction("P1", "P3");
+  g.AddRavenkeeperAction("P3", "P2", SAINT);  // Should learn POISONER.
+  g.AddDay(2);
+  g.AddDeath("P3");
+  g.AddClaimRavenkeeperAction("P3", "P2", SAINT);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
 }
 
 TEST(Slayer, ImpDeducesDrunkSlayer) {

@@ -224,7 +224,7 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       claim_of_player_(num_players_), players_claiming_(Role_ARRAYSIZE),
       perspective_player_(kNoPlayer),
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
-      night_action_used_(num_players_),
+      night_action_used_(num_players_), deferred_constraints_(num_players_),
       st_player_roles_(num_players_), st_shown_tokens_(num_players_),
       st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
       st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer),
@@ -1261,9 +1261,9 @@ void GameState::AddClaim(const Claim& claim) {
       AddClaim(player, BUTLER);
       AddClaimButlerAction(player, claim.info().butler_action());
       break;
-    case RoleAction::kRavenkeeperInfo:
+    case RoleAction::kRavenkeeperAction:
       AddClaim(player, RAVENKEEPER);
-      AddClaimRavenkeeperInfo(player, claim.info().ravenkeeper_info());
+      AddClaimRavenkeeperAction(player, claim.info().ravenkeeper_action());
       break;
     case RoleAction::kUndertakerInfo:
       AddClaim(player, UNDERTAKER);
@@ -1358,22 +1358,37 @@ void GameState::AddClaimFortuneTellerAction(
 
 void GameState::AddClaimMonkAction(const string& player,
                                    const string& monk_action) {
+  CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
   BeforeEvent(Event::kClaim);
+  const int i = PlayerIndex(player), target = PlayerIndex(monk_action);
+  AddImplication(night_roles_.back()[i][MONK], monk_pick_.back()[target]);
+  deferred_constraints_[i] = false;
 }
 
 void GameState::AddClaimButlerAction(const string& player,
                                      const string& butler_action) {
+  CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
   BeforeEvent(Event::kClaim);
+  const int i = PlayerIndex(player), target = PlayerIndex(butler_action);
+  AddImplication(night_roles_.back()[i][BUTLER], butler_pick_.back()[target]);
+  deferred_constraints_[i] = false;
 }
 
-void GameState::AddClaimRavenkeeperInfo(
+void GameState::AddClaimRavenkeeperAction(
     const string& player, const string& pick, Role role) {
+  CHECK_NE(role, ROLE_UNSPECIFIED) << "Ravenkeeper needs to learn a valid role";
   BeforeEvent(Event::kClaim);
+  const int i = PlayerIndex(player), target = PlayerIndex(pick);
+  CHECK_EQ(i, night_death_)
+      << player << " didn't die at night, Ravenkeeper wouldn't trigger.";
+  AddOr({Not(night_roles_.back()[i][RAVENKEEPER]), poisoner_pick_.back()[i],
+         night_roles_.back()[target][role]});
+  deferred_constraints_[i] = false;
 }
 
-void GameState::AddClaimRavenkeeperInfo(const string& player,
-                                        const RavenkeeperInfo& info) {
-  AddClaimRavenkeeperInfo(player, info.pick(), info.role());
+void GameState::AddClaimRavenkeeperAction(const string& player,
+                                        const RavenkeeperAction& info) {
+  AddClaimRavenkeeperAction(player, info.pick(), info.role());
 }
 
 void GameState::AddClaimUndertakerInfo(const string& player, Role info) {
@@ -1560,8 +1575,8 @@ void GameState::AddRoleAction(const string& player,
     case RoleAction::kButlerAction:
       AddButlerAction(player, role_action.butler_action());
       break;
-    case RoleAction::kRavenkeeperInfo:
-      AddRavenkeeperInfo(player, role_action.ravenkeeper_info());
+    case RoleAction::kRavenkeeperAction:
+      AddRavenkeeperAction(player, role_action.ravenkeeper_action());
       break;
     case RoleAction::kUndertakerInfo:
       AddUndertakerInfo(player, role_action.undertaker_info());
@@ -1616,6 +1631,7 @@ void GameState::AddLearningRoleInfoConstraints(
                       ping1_name, Role_Name(false_trigger)));
   AddOr({Not(is_player_role), player_poisoned, ping1_role,
          ping2_role, ping1_healthy_false, ping2_healthy_false});
+  deferred_constraints_[player] = false;
 }
 
 void GameState::AddWasherwomanInfo(const string& player, const string& ping1,
@@ -1623,7 +1639,8 @@ void GameState::AddWasherwomanInfo(const string& player, const string& ping1,
   ValidateRoleAction(player, WASHERWOMAN);
   CHECK(IsTownsfolkRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
-  AddLearningRoleInfoConstraints(player, WASHERWOMAN, ping1, ping2, role);
+  // We defer compiling the info until public claim.
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddWasherwomanInfo(
@@ -1636,7 +1653,8 @@ void GameState::AddLibrarianInfo(const string& player, const string& ping1,
   ValidateRoleAction(player, LIBRARIAN);
   CHECK(IsOutsiderRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
-  AddLearningRoleInfoConstraints(player, LIBRARIAN, ping1, ping2, role);
+  // We defer compiling the info until public claim.
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddLibrarianInfo(
@@ -1649,7 +1667,8 @@ void GameState::AddInvestigatorInfo(const string& player, const string& ping1,
   ValidateRoleAction(player, INVESTIGATOR);
   CHECK(IsMinionRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
-  AddLearningRoleInfoConstraints(player, INVESTIGATOR, ping1, ping2, role);
+  // We defer compiling the info until public claim.
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddInvestigatorInfo(
@@ -1679,11 +1698,11 @@ void GameState::AddMonkAction(const string& player, const string& monk_action) {
   ValidateRoleAction(player, MONK);
   CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
   BeforeEvent(Event::kStorytellerInteraction);
-  const int target = PlayerIndex(monk_action);
-  if (perspective_ == STORYTELLER) {
+  const int i = PlayerIndex(player), target = PlayerIndex(monk_action);
+  if (perspective_ == STORYTELLER && st_player_roles_[i] == MONK) {
     st_monk_pick_ = target;
   }
-  model_.FixVariable(monk_pick_.back()[target], true);
+  deferred_constraints_[i] = true;
 }
 
 void GameState::AddButlerAction(const string& player,
@@ -1691,21 +1710,24 @@ void GameState::AddButlerAction(const string& player,
   ValidateRoleAction(player, BUTLER);
   CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
   BeforeEvent(Event::kStorytellerInteraction);
-  const int target = PlayerIndex(butler_action);
-  if (perspective_ == STORYTELLER) {
+  const int i = PlayerIndex(player), target = PlayerIndex(butler_action);
+  if (perspective_ == STORYTELLER && st_player_roles_[i] == BUTLER) {
     st_butler_pick_ = target;
   }
-  model_.FixVariable(butler_pick_.back()[target], true);
+  AddImplication(night_roles_.back()[i][BUTLER], butler_pick_.back()[target]);
 }
 
-void GameState::AddRavenkeeperInfo(const string& player, const string& pick,
-                                  Role role) {
+void GameState::AddRavenkeeperAction(const string& player, const string& pick,
+                                   Role role) {
+  ValidateRoleAction(player, RAVENKEEPER);
+  CHECK_NE(role, ROLE_UNSPECIFIED) << "Ravenkeeper needs to learn a valid role";
   BeforeEvent(Event::kStorytellerInteraction);
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
-void GameState::AddRavenkeeperInfo(
-    const string& player, const RavenkeeperInfo& info) {
-  AddRavenkeeperInfo(player, info.pick(), info.role());
+void GameState::AddRavenkeeperAction(
+    const string& player, const RavenkeeperAction& action) {
+  AddRavenkeeperAction(player, action.pick(), action.role());
 }
 
 void GameState::AddUndertakerInfo(const string& player, Role info) {
@@ -1742,7 +1764,7 @@ void GameState::ValidateRoleAction(const string& player, Role role) {
   CHECK_NE(perspective_, OBSERVER)
       << absl::StrFormat("Observer cannot see %s actions", role_name);
   if (perspective_ == STORYTELLER) {
-    const Role st_player_role = st_player_roles_[player_index];
+    const Role st_player_role = st_shown_tokens_[player_index];
     CHECK_EQ(st_player_role, role)
         << absl::StrFormat("%s needs to be the %s, got %s", player,
                            role_name, Role_Name(st_player_role));
@@ -2128,6 +2150,11 @@ vector<BoolVar> GameState::CollectAssumptionLiterals(
 // This function will be very slow in low-info game states. Consider adding
 // more assumptions for these cases.
 SolverResponse GameState::SolveGame(const SolverRequest& request) const {
+  for (int i = 0; i < num_players_; ++i) {
+    CHECK(!deferred_constraints_[i])
+        << "Some night roles' actions had their constraint evaluation deferred "
+        << "until public claim. Please call SolveGame after all public claims.";
+  }
   SolverResponse result;
   CpModelBuilder model(model_);  // Making a copy to add assumptions repeatedly.
   vector<BoolVar> assumption_literals = CollectAssumptionLiterals(request);
