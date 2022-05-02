@@ -272,11 +272,11 @@ TEST(Investigator, DemonLearnsMinionRole) {
   g.AddClaim("P1", EMPATH);  // Imp lies
   g.AddClaim("P2", SAINT);  // Minion claims only outsider, so no Baron.
   g.AddClaim("P3", INVESTIGATOR);
-  g.AddClaimInvestigatorInfo("P3", "P2", "P5", POISONER);
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RAVENKEEPER);
+  g.AddClaimInvestigatorInfo("P3", "P2", "P5", POISONER);
   // Minion can only be a Poisoner:
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", POISONER}, {"P3", INVESTIGATOR}, {"P4", VIRGIN},
@@ -293,11 +293,11 @@ TEST(Washerwoman, VirginConfirmsWasherwoman) {
   g.AddClaim("P1", EMPATH);
   g.AddClaim("P2", SAINT);
   g.AddClaim("P3", WASHERWOMAN);
-  g.AddClaimWasherwomanInfo("P3", "P4", "P5", MAYOR);
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddClaimWasherwomanInfo("P3", "P4", "P5", MAYOR);
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
   vector<unordered_map<string, Role>> expected_worlds({
@@ -315,11 +315,11 @@ TEST(Librarian, VirginConfirmsLibrarian) {
   g.AddClaim("P1", EMPATH);
   g.AddClaim("P2", SAINT);
   g.AddClaim("P3", LIBRARIAN);
-  g.AddClaimLibrarianInfo("P3", "P1", "P6", DRUNK);
   g.AddClaim("P4", VIRGIN);
   g.AddClaim("P5", MAYOR);
   g.AddClaim("P6", SLAYER);
   g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddClaimLibrarianInfo("P3", "P1", "P6", DRUNK);
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
   vector<unordered_map<string, Role>> expected_worlds({
@@ -746,6 +746,42 @@ TEST(Ravenkeeper, InvalidRavenkeeperLearnsFalseRole) {
   EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
 }
 
+TEST(FortuneTeller, LearnsTrueInfo) {
+  GameState g = FromRolesWithRedHerring(
+      {IMP, BARON, FORTUNE_TELLER, RECLUSE, SAINT}, "P5");
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", BARON);
+  g.AddShownToken("P3", FORTUNE_TELLER);
+  g.AddShownToken("P4", RECLUSE);
+  g.AddShownToken("P5", SAINT);
+  g.AddFortuneTellerAction("P3", "P1", "P2", true);
+  g.AddDay(1);
+  g.AddClaim("P1", MAYOR);
+  g.AddClaim("P2", SLAYER);
+  g.AddClaim("P3", FORTUNE_TELLER);
+  g.AddClaim("P4", RECLUSE);
+  g.AddClaim("P5", SAINT);
+  g.AddClaimFortuneTellerAction("P3", "P1", "P2", true);  // P1 is Imp
+  g.AddNight(2);
+  g.AddImpAction("P1", "P2");
+  g.AddFortuneTellerAction("P3", "P3", "P4", true);
+  g.AddDay(2);
+  g.AddDeath("P2");
+  g.AddClaimFortuneTellerAction("P3", "P3", "P4", true);  // P4 is Recluse
+  g.AddNight(3);
+  g.AddImpAction("P1", "P2");
+  g.AddFortuneTellerAction("P3", "P3", "P5", true);
+  g.AddDay(3);
+  g.AddClaimFortuneTellerAction("P3", "P3", "P5", true);  // P5 is red herring
+  g.AddNight(4);
+  g.AddImpAction("P1", "P2");
+  g.AddFortuneTellerAction("P3", "P4", "P2", false);
+  g.AddDay(4);
+  g.AddClaimFortuneTellerAction("P3", "P4", "P2", false);  // Recluse no-proc.
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
 TEST(Slayer, ImpDeducesDrunkSlayer) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
@@ -818,11 +854,11 @@ TEST(Soldier, InvalidImpKillsHealthySoldier) {
   g.AddNight(1);
   g.AddDay(1);
   g.AddClaim("P1", WASHERWOMAN);
-  g.AddClaimWasherwomanInfo("P1", "P4", "P5", SOLDIER);
   g.AddClaim("P2", RECLUSE);
   g.AddClaim("P3", SAINT);
   g.AddClaim("P4", BUTLER);
   g.AddClaim("P5", SOLDIER);
+  g.AddClaimWasherwomanInfo("P1", "P4", "P5", SOLDIER);
   const SolverRequest& r = FromCurrentRoles({{"P5", SOLDIER}});
   // P5 is SOLDIER in all worlds:
   EXPECT_EQ(g.SolveGame(r).worlds_size(), g.SolveGame().worlds_size());

@@ -1,96 +1,122 @@
 # Good is trying to solve this final 3 with only public information.
 perspective: OBSERVER
 setup {
-    players: "Alke"
-    players: "Pykmo"
-    players: "Viessa"
-    players: "Hagmer"
-    players: "Axylia"
-    # Teensy-ville, no minion or demon info.
+  players: "Alke"
+  players: "Pykmo"
+  players: "Viessa"
+  players: "Hagmer"
+  players: "Axylia"
+  # Teensy-ville, no minion or demon info.
 }
 events {
-    night: 1
+  night: 1
 }
 events {
-    day: 1
+  day: 1
 }
 # All players hardclaim round-robin, starting from Alke.
 events {
-    claim {
-        player: "Alke"
-        role: VIRGIN
-    }
+  claim {
+    player: "Alke"
+    role: VIRGIN
+  }
 }
 # Pykmo claims Butler, letting their demon know to bluff outsider.
 events {
-    claim {
-        player: "Pykmo"
-        role: BUTLER
-        info {
-            butler_action: "Alke"
-        }
-    }
+  claim {
+    player: "Pykmo"
+    role: BUTLER
+  }
 }
 events {
-    claim {
-        player: "Viessa"
-        role: EMPATH
-        info {
-            empath_info: 0
-        }
-    }
+  claim {
+    player: "Viessa"
+    role: EMPATH
+  }
 }
 events {
-    claim {
-        player: "Hagmer"
-        role: FORTUNE_TELLER
-        info {
-            fortuneteller_action {
-                pick1: "Axylia"
-                pick2: "Viessa"
-                yes: true
-            }
-        }
-    }
+  claim {
+    player: "Hagmer"
+    role: FORTUNE_TELLER
+  }
 }
 events {
-    claim {
-        player: "Axylia"
-        role: SAINT
+  claim {
+    player: "Axylia"
+    role: SAINT
+  }
+}
+events {
+  claim {
+    player: "Pykmo"
+    info {
+      butler_action: "Alke"
     }
+  }
+}
+events {
+  claim {
+    player: "Viessa"
+    info {
+      empath_info: 0
+    }
+  }
+}
+events {
+  claim {
+    player: "Hagmer"
+    info {
+      fortuneteller_action {
+        pick1: "Axylia"
+        pick2: "Viessa"
+        yes: true
+      }
+    }
+  }
 }
 # It only makes sense for Viessa or Hagmer to nominate Alke.
 events {
-    nomination {
-        nominator: "Viessa"
-        nominee: "Alke"
-    }
+  nomination {
+    nominator: "Viessa"
+    nominee: "Alke"
+  }
 }
 events {
-    # Virgin proc.
-    execution: "Viessa"
+  # Virgin proc.
+  execution: "Viessa"
 }
 events {
-    death: "Viessa"
+  death: "Viessa"
 }
 events {
-    night: 2
+  night: 2
 }
 events {
-    day: 2
+  day: 2
 }
 # Storyteller announces that Alke died in the night.
 events {
-    death: "Alke"
+  death: "Alke"
 }
 # Pykmo claims Alke is still their master.
 events {
-    claim {
-        player: "Pykmo"
-        role: BUTLER
-        info {
-            butler_action: "Alke"
-        }
+  claim {
+    player: "Pykmo"
+    info {
+      butler_action: "Alke"
     }
+  }
+}
+events {
+  claim {
+    player: "Hagmer"
+    info {
+      fortuneteller_action {
+        pick1: "Axylia"
+        pick2: "Pykmo"
+        yes: true
+      }
+    }
+  }
 }
 # And now it is the final 3 with Axylia, Pykmo and Hagmer.

@@ -155,13 +155,6 @@ events {
   claim {
     player: "Goren"
     role: INVESTIGATOR
-    info {
-      investigator_info {
-        ping1: "Sylvar"
-        ping2: "Merethyl"
-        role: SCARLET_WOMAN
-      }
-    }
   }
 }
 events {
@@ -174,13 +167,6 @@ events {
   claim {
     player: "Merethyl"
     role: FORTUNE_TELLER
-    info {
-      fortuneteller_action {
-        pick1: "Fernia"
-        pick2: "Eletha"
-        yes: true
-      }
-    }
   }
 }
 events {
@@ -199,6 +185,41 @@ events {
   claim {
     player: "Eletha"
     role: WASHERWOMAN
+  }
+}
+events {
+  claim {
+    player: "Alwyn"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Goren"
+    info {
+      investigator_info {
+        ping1: "Sylvar"
+        ping2: "Merethyl"
+        role: SCARLET_WOMAN
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Merethyl"
+    info {
+      fortuneteller_action {
+        pick1: "Fernia"
+        pick2: "Eletha"
+        yes: true
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Eletha"
     info {
       washerwoman_info {
         ping1: "Alwyn"
@@ -206,12 +227,6 @@ events {
         role: INVESTIGATOR
       }
     }
-  }
-}
-events {
-  claim {
-    player: "Alwyn"
-    role: MONK
   }
 }
 # Fernia claims Slayer and shoots Meterhyl (public storyteller interaction).

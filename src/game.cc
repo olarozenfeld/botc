@@ -157,6 +157,8 @@ string Time::ToString() const {
 }  // namespace internal
 
 // TODO(olaola):
+// * Solver simplifying assumption: full round-robin role claims need to finish
+//   before info claims start.
 // * Replace CHECKs with absl::Status everywhere for testing.
 // * Validate day 1 hard-claims (because we need them).
 // * Validate player interactions (e.g. exactly 1 FT action per night)
@@ -918,7 +920,7 @@ vector<BoolVar> GameState::CollectRolesForPlayer(
       // consider players who claimed the role. This, of course, applies only
       // starting day 1 (we rely on everyone claiming on start of day 1):
       if (IsGoodRole(role) && (cur_time_.IsDay || cur_time_.Count > 1) &&
-          !IsClaiming(player, role)) {
+          claim_of_player_[player] != role) {
         continue;
       }
       result.push_back(from[player][role]);
@@ -1147,7 +1149,7 @@ void GameState::AddDeath(const string& name) {
     const BoolVar poisoned = CreatePoisonedRoleVar(
         SLAYER, cur_time_.Count, true);
     // Open strategy optimization: the actual Recluse would hardclaim day 1.
-    if (IsClaiming(target, RECLUSE)) {
+    if (claim_of_player_[target] == RECLUSE) {
       BoolVar poisoned_recluse = CreatePoisonedRoleVar(
           RECLUSE, cur_time_.Count, true);
       BoolVar healthy_recluse = CreateEquivalentVarAnd(
@@ -1347,7 +1349,38 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
 
 void GameState::AddClaimFortuneTellerAction(
     const string& player, const string& pick1, const string& pick2, bool yes) {
+  CHECK_NE(pick1, pick2)
+      << "Fortune Teller needs to pick two different players";
   BeforeEvent(Event::kClaim);
+  const int i = PlayerIndex(player);
+  const int p1 = PlayerIndex(pick1), p2 = PlayerIndex(pick2);
+  vector<BoolVar> yes_options({night_roles_.back()[p1][IMP], red_herring_[p1],
+                               night_roles_.back()[p2][IMP], red_herring_[p2]});
+  BoolVar poisoned_recluse;
+  // This optimization is why we want to finish the role claims before claming
+  // role info.
+  if (players_claiming_[RECLUSE].size() > 0) {
+    poisoned_recluse = CreatePoisonedRoleVar(RECLUSE, cur_time_.Count, true);
+  }
+  if (yes) {  // We can only infer Recluse possibilities from Yes answer.
+    for (int ping : {p1, p2}) {
+      if (is_alive_[ping] && claim_of_player_[ping] == RECLUSE) {
+        yes_options.push_back(CreateEquivalentVarAnd(
+          {night_roles_.back()[ping][RECLUSE], Not(poisoned_recluse)},
+          absl::StrFormat("healthy_recluse_%s_%s", players_[ping],
+                          cur_time_.ToString())));
+      }
+    }
+  }
+  vector<BoolVar> cases({
+      Not(night_roles_.back()[i][FORTUNE_TELLER]),
+      CreatePoisonedRoleVar(FORTUNE_TELLER, cur_time_.Count, true)});
+  BoolVar is_yes = CreateEquivalentVarOr(
+    yes_options,
+    absl::StrFormat("fortune_teller_yes_cases_%s", cur_time_.ToString()));
+  cases.push_back(yes ? is_yes : Not(is_yes));
+  AddOr(cases);
+  deferred_constraints_[i] = false;
 }
 
 void GameState::AddClaimFortuneTellerAction(
@@ -1686,7 +1719,11 @@ void GameState::AddEmpathInfo(const string& player, int empath_info) {
 
 void GameState::AddFortuneTellerAction(
     const string& player, const string& pick1, const string& pick2, bool yes) {
+  ValidateRoleAction(player, FORTUNE_TELLER);
+  CHECK_NE(pick1, pick2)
+      << "Fortune Teller needs to pick two different players";
   BeforeEvent(Event::kStorytellerInteraction);
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddFortuneTellerAction(

@@ -172,11 +172,7 @@ class GameState {
   Role ClaimedRole(const string& player) const {
     return claim_of_player_[PlayerIndex(player)];
   }
-
   vector<string> ClaimingRole(Role role) const;
-  bool IsClaiming(const string& player, Role role) const {
-    return IsClaiming(PlayerIndex(player), role);
-  }
 
   string OnTheBlock() const {
     return on_the_block_ == kNoPlayer ? "" : players_[on_the_block_];
@@ -309,10 +305,6 @@ class GameState {
   void WriteSatSolutionToFile(const CpSolverResponse response,
                               CpModelBuilder* model,
                               const string& filename) const;
-  bool IsClaiming(int player, Role role) const {
-    const auto& ps = players_claiming_[role];
-    return std::find(ps.begin(), ps.end(), player) != ps.end();
-  }
 
   Perspective perspective_;
   vector<string> players_;

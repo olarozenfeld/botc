@@ -127,6 +127,29 @@ events {
   claim {
     player: "Pykmo"
     role: BUTLER
+  }
+}
+events {
+  claim {
+    player: "Viessa"
+    role: EMPATH
+  }
+}
+events {
+  claim {
+    player: "Hagmer"
+    role: FORTUNE_TELLER
+  }
+}
+events {
+  claim {
+    player: "Axylia"
+    role: SAINT
+  }
+}
+events {
+  claim {
+    player: "Pykmo"
     info {
       butler_action: "Alke"
     }
@@ -135,7 +158,6 @@ events {
 events {
   claim {
     player: "Viessa"
-    role: EMPATH
     info {
       empath_info: 0
     }
@@ -144,7 +166,6 @@ events {
 events {
   claim {
     player: "Hagmer"
-    role: FORTUNE_TELLER
     info {
       fortuneteller_action {
         pick1: "Axylia"
@@ -152,12 +173,6 @@ events {
         yes: true
       }
     }
-  }
-}
-events {
-  claim {
-    player: "Axylia"
-    role: SAINT
   }
 }
 # It only makes sense for Viessa or Hagmer to nominate Alke.
@@ -240,7 +255,6 @@ events {
 events {
   claim {
     player: "Pykmo"
-    role: BUTLER
     info {
       butler_action: "Alke"
     }
@@ -249,7 +263,6 @@ events {
 events {
   claim {
     player: "Hagmer"
-    role: FORTUNE_TELLER
     info {
       fortuneteller_action {
         pick1: "Axylia"
