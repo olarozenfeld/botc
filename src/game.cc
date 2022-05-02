@@ -710,6 +710,15 @@ void GameState::InitMonkVars() {
   for (int i = 0; i < num_players_; ++i) {
     AddImplication(monk_picks[i], Not(night_roles_[0][i][MONK]));
   }
+  BoolVar poisoned_monk = CreatePoisonerPickedRoleVar(
+      MONK, cur_time_.Count, true);
+  vector<BoolVar> healthy_monk_protected;
+  for (int i = 0; i < num_players_; ++i) {
+    healthy_monk_protected.push_back(CreateEquivalentVarAnd(
+        {Not(poisoned_monk), monk_picks[i]},
+        absl::StrFormat("healthy_monk_picks_%s_%s", players_[i], time)));
+  }
+  healthy_monk_protected_.push_back(healthy_monk_protected);
 }
 
 void GameState::InitPoisonerVars() {
@@ -1163,13 +1172,9 @@ void GameState::AddDeath(const string& name) {
         AddImplication(night_roles_.back()[i][IMP], Not(poisoner_pick[i]));
       }
     }
-    // The target cannot be Monk-protected by a non-poisoned Monk:
-    for (int i : players_claiming_[MONK]) {
-      if (is_alive_[i]) {
-        AddImplicationOr(
-            Not(poisoner_pick[i]),
-            {Not(night_roles_[0][i][MONK]), Not(monk_pick_.back()[death])});
-      }
+    // The target cannot be Monk-protected by a healthy Monk:
+    if (players_claiming_[MONK].size() > 0) {
+      model_.FixVariable(healthy_monk_protected_.back()[death], false);
     }
     // The target cannot be a non-poisoned Soldier:
     AddOr({poisoner_pick[death], Not(night_roles_[0][death][SOLDIER])});
@@ -1178,11 +1183,16 @@ void GameState::AddDeath(const string& name) {
     picks.push_back(imp_pick_.back()[death]);
     for (int i : players_claiming_[MAYOR]) {
       if (is_alive_[i] && death != i) {  // Possible Mayor bounce
-        // Mayor needs to be non-poisoned and Imp picked:
+        // If Imp picked, Mayor needs to be non-poisoned and not protected by
+        // a healthy Monk:
         const BoolVar& picked = imp_pick_.back()[i];
         picks.push_back(picked);
-        AddImplicationOr(poisoner_pick[i],
-                         {Not(night_roles_[0][i][MAYOR]), Not(picked)});
+        vector<BoolVar> reqs(
+            {night_roles_[0][i][MAYOR], Not(poisoner_pick[i])});
+        if (players_claiming_[MONK].size() > 0) {
+          reqs.push_back(Not(healthy_monk_protected_.back()[i]));
+        }
+        AddImplicationAnd(picked, reqs);
       }
     }
     AddEqualitySum(picks, 1);
@@ -1924,7 +1934,6 @@ BoolVar GameState::CreatePoisonedRoleVar(Role role, int day, bool only_alive) {
 }
 
 void GameState::AddNoDeathConstraints() {
-  const string time = cur_time_.ToString();
   // This happens after new day or Slayer shot when there was no death.
   // In case of Slayer shot, the shot failed:
   if (slayer_shots_.size() > 0) {
@@ -1938,45 +1947,89 @@ void GameState::AddNoDeathConstraints() {
            CreatePoisonedRoleVar(SLAYER, cur_time_.Count, true)});
     return;
   }
-  // In case of new day, the Imp did not kill at night. This could be:
+  // In case of new day, the Imp did not kill at night. This could be either:
   // * Imp chose to sink a kill on a dead player (Imp pick is mandatory)
   // * Imp was poisoned
-  // * Target was a Soldier ^ Target was not poisoned
-  // * Monk was not poisoned ^ Imp picked alive Monk protected target
+  // * Target was an alive and healthy Soldier
+  // * Imp picked an alive-healthy-Monk protected target
+  // * Mayor bounce to no kill. This means all of:
+  //    * Imp targeted Mayor
+  //    * Mayor was alive and healthy
+  //    * Mayor was not alive-healthy-Monk protected (otherwise no bounce)
+  //    * Mayor bounce was to another player j, s.t. either:
+  //      * j is dead
+  //      * j is a healthy soldier
+  //      * j is protected by an alive and healthy Monk
   vector<BoolVar> cases;
-  const auto& imp_picks = imp_pick_.back();
+  const string time = absl::StrFormat("night_%d", cur_time_.Count);
+  const auto& imp_pick = imp_pick_.back();
   for (int i = 0; i < num_players_; ++i) {
     if (!is_alive_[i]) {
-      cases.push_back(imp_picks[i]);  // Sink kill.
+      cases.push_back(imp_pick[i]);  // Sink kill.
     }
   }
   BoolVar imp_poisoned = CreatePoisonerPickedRoleVar(
       IMP, cur_time_.Count, true);
   cases.push_back(imp_poisoned);
-  if (players_claiming_[MONK].size() > 0) {
-    vector<BoolVar> same_picks;
-    const auto& monk_picks = monk_pick_.back();
-    for (int i = 0; i < num_players_; ++i) {
-      if (is_alive_[i]) {
-        same_picks.push_back(CreateEquivalentVarAnd(
-            {imp_picks[i], monk_picks[i]},
-            absl::StrFormat("imp_and_monk_pick_%s_%s", players_[i], time)));
-      }
-    }
-    BoolVar picks_equal = CreateEquivalentVarSum(
-        same_picks, absl::StrFormat("imp_and_monk_pick_same_%s", time));
-    BoolVar monk_poisoned = CreatePoisonerPickedRoleVar(
-        MONK, cur_time_.Count, true);
-    cases.push_back(CreateEquivalentVarAnd(
-        {Not(monk_poisoned), picks_equal},
-        absl::StrFormat("imp_pick_healthy_monk_protected_%s", time)));
-  }
   // Soldier protection: (optimized for open strategy):
   const auto& poisoner_pick = poisoner_pick_.back();
   for (int i : players_claiming_[SOLDIER]) {
     cases.push_back(CreateEquivalentVarAnd(
-      {imp_picks[i], night_roles_[0][i][SOLDIER], Not(poisoner_pick[i])},
+      {imp_pick[i], night_roles_[0][i][SOLDIER], Not(poisoner_pick[i])},
       absl::StrFormat("imp_picks_healthy_soldier_%s_%s", players_[i], time)));
+  }
+  // Monk protection:
+  if (players_claiming_[MONK].size() > 0) {
+    for (int i = 0; i < num_players_; ++i) {
+      if (is_alive_[i]) {
+        cases.push_back(CreateEquivalentVarAnd(
+            {healthy_monk_protected_.back()[i], imp_pick[i]},
+            absl::StrFormat("imp_pick_healthy_monk_protected_%s_%s",
+                            players_[i], time)));
+      }
+    }
+  }
+  // Mayor bounce to no kill.
+  vector<BoolVar> bounce_cases(num_players_);
+  if (players_claiming_[MAYOR].size() > 0) {
+    for (int j = 0; j < num_players_; ++j) {
+      if (!is_alive_[j]) {
+        continue;
+      }
+      // * j is a healthy soldier, OR
+      // * j is protected by an alive and healthy Monk
+      BoolVar healthy_soldier = CreateEquivalentVarAnd(
+          {night_roles_[0][j][SOLDIER], Not(poisoner_pick[j])},
+          absl::StrFormat("healthy_soldier_%s_%s", players_[j], time));
+      bounce_cases[j] = (players_claiming_[MONK].size() == 0 ?
+          healthy_soldier :
+          CreateEquivalentVarOr(
+            {healthy_soldier, healthy_monk_protected_.back()[j]},
+            absl::StrFormat("mayor_bounce_to_%s_%s", players_[j], time)));
+    }
+  }
+  for (int i : players_claiming_[MAYOR]) {
+    if (!is_alive_[i]) {
+      continue;
+    }
+    vector<BoolVar> valid_bounce_cases;
+    for (int j = 0; j < num_players_; ++j) {
+      if (is_alive_[j] && j != i) {
+        valid_bounce_cases.push_back(bounce_cases[j]);
+      }
+    }
+    string name = absl::StrFormat(
+        "mayor_%s_bounce_no_kill_valid_%s", players_[i], time);
+    BoolVar mayor_bounce_valid = (num_alive_ < num_players_ ?
+        model_.TrueVar().WithName("1") :
+        CreateEquivalentVarOr(valid_bounce_cases, name));
+    vector<BoolVar> reqs({imp_pick[i], night_roles_[0][i][MAYOR],
+                          Not(poisoner_pick[i]), mayor_bounce_valid});
+    if (players_claiming_[MONK].size() > 0) {
+      reqs.push_back(Not(healthy_monk_protected_.back()[i]));
+    }
+    name = absl::StrFormat("mayor_%s_bounce_no_kill_%s", players_[i], time);
+    cases.push_back(CreateEquivalentVarAnd(reqs, name));
   }
   AddOr(cases);
 }

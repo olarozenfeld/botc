@@ -577,6 +577,81 @@ TEST(NightDeaths, ImpDeducesDrunkSoldier) {
   EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
+TEST(NightDeaths, MayorBounceToSoldier) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", RAVENKEEPER);
+  g.AddClaim("P3", CHEF);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", SOLDIER);
+  g.AddClaim("P6", MAYOR);
+  g.AddClaim("P7", UNDERTAKER);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P6");
+  g.AddDay(2);
+  g.AddNoStorytellerAnnouncement();  // No deaths: Mayor->Soldier bounce.
+  // That means both the Mayor and the Soldier are sober:
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", BARON}, {"P3", CHEF}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", MAYOR}, {"P7", DRUNK}},
+      {{"P1", IMP}, {"P2", BARON}, {"P3", DRUNK}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", MAYOR}, {"P7", UNDERTAKER}}});
+  EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
+}
+
+TEST(NightDeaths, MayorBounceToMonkProtectedTarget) {
+  GameState g = FromRoles({IMP, BARON, MONK, MAYOR, SAINT, RECLUSE, EMPATH});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", BARON);
+  g.AddShownToken("P3", MONK);
+  g.AddShownToken("P4", MAYOR);
+  g.AddShownToken("P5", SAINT);
+  g.AddShownToken("P6", RECLUSE);
+  g.AddShownToken("P7", EMPATH);
+  g.AddDemonInfo("P1", {"P2"}, {RAVENKEEPER, FORTUNE_TELLER, SOLDIER});
+  g.AddMinionInfo("P2", "P1", {});
+  g.AddDay(1);
+  g.AddClaim("P1", RAVENKEEPER);
+  g.AddClaim("P2", SOLDIER);
+  g.AddClaim("P3", MONK);
+  g.AddClaim("P4", MAYOR);
+  g.AddClaim("P5", SAINT);
+  g.AddClaim("P6", RECLUSE);
+  g.AddClaim("P7", EMPATH);
+  g.AddNight(2);
+  g.AddMonkAction("P3", "P7");  // Monk is protecting P7, not the Mayor.
+  g.AddImpAction("P1", "P4");  // Imp tries to kill the Mayor.
+  g.AddDay(2);
+  g.AddNoStorytellerAnnouncement();  // Kill bounced to P7.
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(NightDeaths, MayorBounce) {
+  GameState g = FromRoles({IMP, BARON, MAYOR, SAINT, RECLUSE});
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddShownToken("P2", BARON);
+  g.AddShownToken("P3", MAYOR);
+  g.AddShownToken("P4", SAINT);
+  g.AddShownToken("P5", RECLUSE);
+  g.AddDay(1);
+  g.AddClaim("P1", RAVENKEEPER);
+  g.AddClaim("P2", SOLDIER);
+  g.AddClaim("P3", MAYOR);
+  g.AddClaim("P4", SAINT);
+  g.AddClaim("P5", RECLUSE);
+  g.AddNight(2);
+  g.AddImpAction("P1", "P3");  // Imp tries to kill the Mayor.
+  g.AddDay(2);
+  g.AddDeath("P5");
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
 TEST(Slayer, ImpDeducesDrunkSlayer) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);

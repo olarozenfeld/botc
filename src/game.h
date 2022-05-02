@@ -365,6 +365,7 @@ class GameState {
   vector<vector<BoolVar>> poisoner_pick_;  // x night x player.
   vector<vector<BoolVar>> monk_pick_;  // x night x player (if Monk is claimed).
   vector<vector<BoolVar>> butler_pick_;  // x night x player (if it is claimed).
+  vector<vector<BoolVar>> healthy_monk_protected_;  // x night x player.
   vector<BoolVar> is_evil_;  // x player.
 };
 
