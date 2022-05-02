@@ -782,6 +782,63 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
 }
 
+TEST(Empath, LearnsTrueInfo) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(10));
+  g.AddNight(1);
+  g.AddShownToken("P1", EMPATH);
+  g.AddEmpathInfo("P1", 2);
+  g.AddDay(1);
+  g.AddClaim("P1", EMPATH);
+  g.AddClaim("P2", VIRGIN);  // Actually Spy
+  g.AddClaim("P3", SOLDIER);
+  g.AddClaim("P4", MAYOR);
+  g.AddClaim("P5", SLAYER);
+  g.AddClaim("P6", RAVENKEEPER);
+  g.AddClaim("P7", SAINT);  // Actually Imp
+  g.AddClaim("P8", MAYOR);  // Actually Baron
+  g.AddClaim("P9", CHEF);
+  g.AddClaim("P10", RECLUSE);
+  g.AddClaimEmpathInfo("P1", 2);  // Both Spy and Recluse proc evil
+  g.AddNomination("P10", "P4");
+  g.AddVote({"P1", "P2", "P3", "P8", "P9"}, "P4");
+  g.AddExecution("P4");
+  g.AddDeath("P4");
+  g.AddNight(2);
+  g.AddEmpathInfo("P1", 0);
+  g.AddDay(2);
+  g.AddDeath("P5");
+  g.AddClaimEmpathInfo("P1", 0);  // Both Spy and Recluse proc good
+  g.AddNomination("P10", "P10");
+  g.AddVote({"P1", "P2", "P3", "P8"}, "P10");
+  g.AddExecution("P10");
+  g.AddDeath("P10");
+  g.AddNight(3);
+  g.AddEmpathInfo("P1", 1);  // Spy Evil again
+  g.AddDay(3);
+  g.AddClaimEmpathInfo("P1", 1);
+  g.AddNomination("P1", "P9");
+  g.AddVote({"P1", "P2", "P3", "P8"}, "P9");
+  g.AddExecution("P9");
+  g.AddDeath("P9");
+  g.AddNight(4);
+  g.AddEmpathInfo("P1", 1);  // Spy Good again, pings off Baron
+  g.AddDay(4);
+  g.AddClaimEmpathInfo("P1", 1);
+  g.AddNomination("P1", "P8");
+  g.AddVote({"P1", "P2", "P3"}, "P8");
+  g.AddExecution("P8");
+  g.AddDeath("P8");
+  g.AddNight(5);
+  g.AddEmpathInfo("P1", 1);  // Spy Good, ping off Imp
+  g.AddDay(5);
+  g.AddClaimEmpathInfo("P1", 1);
+  const SolverRequest& r = FromStartingRoles({
+      {"P1", EMPATH}, {"P2", SPY}, {"P3", SOLDIER}, {"P4", MAYOR},
+      {"P5", SLAYER}, {"P6", RAVENKEEPER}, {"P7", IMP}, {"P8", BARON},
+      {"P9", DRUNK}, {"P10", RECLUSE}});
+  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
+}
+
 TEST(Slayer, ImpDeducesDrunkSlayer) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);

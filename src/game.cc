@@ -158,17 +158,18 @@ string Time::ToString() const {
 
 // TODO(olaola):
 // * Solver simplifying assumption: full round-robin role claims need to finish
-//   before info claims start.
+//   before info claims start. Validate this!
+// * Implement dead votes.
+// * Decide what to do about the Butler -- maybe support the "full" voting?
 // * Replace CHECKs with absl::Status everywhere for testing.
-// * Validate day 1 hard-claims (because we need them).
 // * Validate player interactions (e.g. exactly 1 FT action per night)
 // * Validate night order.
-// * Unit test Imp starpass.
+// * Unit test Imp starpass!!
 // * Solver optimization ideas:
 //   * Check whether I have duplicate variables or constraints (and maybe cache
 //     them).
-//   * Require full claims before solve, and defer constraint building until
-//     after solve (will reduce some constraints).
+//   * Decision strategy: try to assign Imp first, then claimed roles (or
+//     Minions?).
 
 GameState GameState::FromStorytellerPerspective(
     absl::Span<const string> players, const unordered_map<string, Role>& roles,
@@ -340,8 +341,14 @@ BoolVar GameState::CreateEquivalentVarAnd(
   if (literals.size() == 0) {
     return model_.FalseVar();
   }
+  const string key = ConstraintName("^", literals);
+  const auto it = var_cache_.find(key);
+  if (it != var_cache_.end()) {
+    return it->second;
+  }
   BoolVar var = model_.NewBoolVar().WithName(name);
   AddEquivalenceAnd(var, literals);
+  var_cache_[key] = var;
   return var;
 }
 
@@ -350,8 +357,14 @@ BoolVar GameState::CreateEquivalentVarOr(
   if (literals.size() == 0) {
     return model_.FalseVar();
   }
+  const string key = ConstraintName("V", literals);
+  const auto it = var_cache_.find(key);
+  if (it != var_cache_.end()) {
+    return it->second;
+  }
   BoolVar var = model_.NewBoolVar().WithName(name);
   AddEquivalenceOr(var, literals);
+  var_cache_[key] = var;
   return var;
 }
 
@@ -360,8 +373,14 @@ BoolVar GameState::CreateEquivalentVarSum(
   if (literals.size() == 0) {
     return model_.FalseVar();
   }
+  const string key = ConstraintName("+", literals);
+  const auto it = var_cache_.find(key);
+  if (it != var_cache_.end()) {
+    return it->second;
+  }
   BoolVar var = model_.NewBoolVar().WithName(name);
   AddEquivalenceSum(var, literals);
+  var_cache_[key] = var;
   return var;
 }
 
@@ -1343,8 +1362,106 @@ void GameState::AddClaimChefInfo(const string& player, int chef_info) {
   BeforeEvent(Event::kClaim);
 }
 
+vector<int> GameState::AliveNeighbors(int player) const {
+  CHECK_GE(num_alive_, 3) << "Less than 3 alive players, game didn't end";
+  vector<int> result;
+  int i = (player + 1) % num_players_;
+  while (!is_alive_[i]) {
+    i = (i + 1) % num_players_;
+  }
+  result.push_back(i);
+  i = (player + num_players_ - 1) % num_players_;
+  while (!is_alive_[i]) {
+    i = (i  + num_players_ - 1) % num_players_;
+  }
+  result.push_back(i);
+  return result;
+}
+
 void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
+  // We don't check that empath_info is in [0,2], because in rare cases the
+  // Storyteller technically could give a higher number to inform the Empath
+  // that they are drunk or poisoned (if Good really needs help).
+  CHECK_GE(empath_info, 0) << "Expected non-negative Empath info";
   BeforeEvent(Event::kClaim);
+  const int i = PlayerIndex(player);
+  const string time = cur_time_.ToString();
+  vector<int> alive_neighbors = AliveNeighbors(i);  // Size 2.
+  const int ping1 = alive_neighbors[0], ping2 = alive_neighbors[1];
+  const BoolVar& is_empath = day_roles_.back()[i][EMPATH];
+  BoolVar poisoned_i = CreatePoisonedRoleVar(EMPATH, cur_time_.Count, true);
+  BoolVar poisoned_spy = CreatePoisonedRoleVar(SPY, cur_time_.Count, true);
+  BoolVar poisoned_recluse = (players_claiming_[RECLUSE].size() == 0 ?
+      model_.FalseVar() :
+      CreatePoisonedRoleVar(RECLUSE, cur_time_.Count, true));
+  BoolVar ping1_healthy_spy = CreateEquivalentVarAnd(
+      {day_roles_.back()[ping1][SPY], Not(poisoned_spy)},
+      absl::StrFormat("healthy_spy_%s_%s", players_[ping1], time));
+  BoolVar ping2_healthy_spy = CreateEquivalentVarAnd(
+      {day_roles_.back()[ping2][SPY], Not(poisoned_spy)},
+      absl::StrFormat("healthy_spy_%s_%s", players_[ping2], time));
+  BoolVar ping1_healthy_recluse = (claim_of_player_[ping1] != RECLUSE ?
+      model_.FalseVar() :
+      CreateEquivalentVarAnd(
+        {day_roles_.back()[ping1][RECLUSE], Not(poisoned_recluse)},
+        absl::StrFormat("healthy_recluse_%s_%s", players_[ping1], time)));
+  BoolVar ping2_healthy_recluse = (claim_of_player_[ping2] != RECLUSE ?
+      model_.FalseVar() :
+      CreateEquivalentVarAnd(
+        {day_roles_.back()[ping2][RECLUSE], Not(poisoned_recluse)},
+        absl::StrFormat("healthy_recluse_%s_%s", players_[ping2], time)));
+  BoolVar ping1_regs_good = CreateEquivalentVarOr(
+      {Not(is_evil_[ping1]), ping1_healthy_spy},
+      absl::StrFormat("empath_%s_registers_%s_good_%s", player, players_[ping1],
+                      time));
+  BoolVar ping2_regs_good = CreateEquivalentVarOr(
+      {Not(is_evil_[ping2]), ping2_healthy_spy},
+      absl::StrFormat("empath_%s_registers_%s_good_%s", player, players_[ping2],
+                      time));
+  BoolVar ping1_regs_evil = CreateEquivalentVarOr(
+      {is_evil_[ping1], ping1_healthy_recluse},
+      absl::StrFormat("empath_%s_registers_%s_evil_%s", player, players_[ping1],
+                      time));
+  BoolVar ping2_regs_evil = CreateEquivalentVarOr(
+      {is_evil_[ping2], ping2_healthy_recluse},
+      absl::StrFormat("empath_%s_registers_%s_evil_%s", player, players_[ping2],
+                      time));
+  // A healthy alive Recluse *may* register as evil.
+  // A healthy alive Spy *may* register as good.
+  vector<BoolVar> cases({{Not(is_empath), poisoned_i}});
+  switch (empath_info) {
+    case 0:
+      cases.push_back(CreateEquivalentVarAnd(
+          {ping1_regs_good, ping2_regs_good},
+          absl::StrFormat(
+            "empath_0_%s_on_%s_and_%s_%s", player, players_[ping1],
+            players_[ping2], time)));
+      break;
+    case 1:
+      cases.push_back(CreateEquivalentVarAnd(
+          {ping1_regs_good, ping2_regs_evil},
+          absl::StrFormat(
+            "empath_1_%s_on_%s_and_%s_%s_case1", player, players_[ping1],
+            players_[ping2], time)));
+      cases.push_back(CreateEquivalentVarAnd(
+          {ping1_regs_evil, ping2_regs_good},
+          absl::StrFormat(
+            "empath_1_%s_on_%s_and_%s_%s_case2", player, players_[ping1],
+            players_[ping2], time)));
+      break;
+    case 2:
+      cases.push_back(CreateEquivalentVarAnd(
+          {ping1_regs_evil, ping2_regs_evil},
+          absl::StrFormat(
+            "empath_2_%s_on_%s_and_%s_%s", player, players_[ping1],
+            players_[ping2], time)));
+      break;
+    default:
+      // Empath is definitely lying, drunk or poisoned.
+      break;
+  }
+  AddOr(cases);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimFortuneTellerAction(
@@ -1714,7 +1831,14 @@ void GameState::AddChefInfo(const string& player, int chef_info) {
 }
 
 void GameState::AddEmpathInfo(const string& player, int empath_info) {
+  ValidateRoleAction(player, EMPATH);
+  // We don't check that empath_info is in [0,2], because in rare cases the
+  // Storyteller technically could give a higher number to inform the Empath
+  // that they are drunk or poisoned (if Good really needs help).
+  CHECK_GE(empath_info, 0) << "Expected non-negative Empath info";
   BeforeEvent(Event::kStorytellerInteraction);
+  // We defer compiling the info until public claim.
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddFortuneTellerAction(
@@ -1947,6 +2071,12 @@ BoolVar GameState::CreatePoisonerPickedRoleVar(
   // Returns a new variable for whether a role was Poisoner picked during night.
   // Note this is not quite the same as poisoned, because Poisoner might have
   // since died (see CreatePoisonedAliveRoleVar for that amendment).
+  const string name = absl::StrFormat(
+      "poisoner_picked_%s_night_%d", Role_Name(role), night);
+  const auto it = var_cache_.find(name);
+  if (it != var_cache_.end()) {
+    return it->second;
+  }
   vector<BoolVar> picked_role_players;
   vector<int> players_to_check;  // Open strategy optimization.
   if (IsGoodRole(role)) {
@@ -1967,13 +2097,13 @@ BoolVar GameState::CreatePoisonerPickedRoleVar(
       picked_role_players.push_back(picked_role_i);
     }
   }
-  BoolVar role_picked = model_.NewBoolVar().WithName(
-      absl::StrFormat("poisoner_picked_%s_night_%d", Role_Name(role), night));
+  BoolVar role_picked = model_.NewBoolVar().WithName(name);
   if (picked_role_players.size() == 0) {
     model_.FixVariable(role_picked, false);
   } else {
     AddEquivalenceSum(role_picked, picked_role_players);
   }
+  var_cache_[name] = role_picked;
   return role_picked;
 }
 
@@ -2130,6 +2260,17 @@ SolverRequest FromCurrentRoles(
   SolverRequest request;
   for (const auto& it : player_roles) {
     auto *pr = request.mutable_current_assumptions()->add_roles();
+    pr->set_player(it.first);
+    pr->set_role(it.second);
+  }
+  return request;
+}
+
+SolverRequest FromStartingRoles(
+    const unordered_map<string, Role>& player_roles) {
+  SolverRequest request;
+  for (const auto& it : player_roles) {
+    auto *pr = request.mutable_starting_assumptions()->add_roles();
     pr->set_player(it.first);
     pr->set_role(it.second);
   }

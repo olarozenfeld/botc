@@ -305,6 +305,7 @@ class GameState {
   void WriteSatSolutionToFile(const CpSolverResponse response,
                               CpModelBuilder* model,
                               const string& filename) const;
+  vector<int> AliveNeighbors(int player) const;
 
   Perspective perspective_;
   vector<string> players_;
@@ -347,6 +348,7 @@ class GameState {
   int st_butler_pick_;  // A player index (or kNoPlayer) for last night pick.
 
   // OR-Tools related variables: compiling BOTC to SAT.
+  unordered_map<string, BoolVar> var_cache_;  // To prevent duplicate variables.
   CpModelBuilder model_;
   vector<BoolVar> roles_in_play_;  // x role.
   vector<vector<vector<BoolVar>>> day_roles_;  // x day x player x role.
@@ -363,6 +365,8 @@ class GameState {
 
 // Syntactic sugar.
 SolverRequest FromCurrentRoles(const unordered_map<string, Role>& player_roles);
+SolverRequest FromStartingRoles(
+    const unordered_map<string, Role>& player_roles);
 SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles);
 
 }  // namespace botc
