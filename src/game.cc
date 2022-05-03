@@ -214,6 +214,16 @@ vector<string> GameState::ClaimingRole(Role role) const {
   return result;
 }
 
+vector<int> GameState::AlivePlayersClaiming(Role role) const {
+  vector<int> result;
+  for (int i : players_claiming_[role]) {
+    if (is_alive_[i]) {
+      result.push_back(i);
+    }
+  }
+  return result;
+}
+
 GameState::GameState(Perspective perspective, const Setup& setup)
     : perspective_(perspective), num_players_(setup.players_size()),
       is_alive_(num_players_, true), num_alive_(num_players_),
@@ -478,7 +488,7 @@ void GameState::InitNightRoleVars() {
     }
   } else {
     InitImpVars();
-    if (players_claiming_[MONK].size() > 0) {
+    if (AlivePlayersClaiming(MONK).size() > 0) {
       InitMonkVars();
     }
     // The Good roles propagate from night 1:
@@ -592,6 +602,18 @@ void GameState::BeforeEvent(Event::DetailsCase event_type) {
   CHECK_EQ(victory_, TEAM_UNSPECIFIED) << "No events allowed after victory";
   if (event_type == Event::kClaim) {
     CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
+  }
+  if (event_type == Event::kNight) {
+    // If there are Mayor claims, 3 players are alive and there was no
+    // execution, this means no Mayor win:
+    if (AlivePlayersClaiming(MAYOR).size() > 0 && num_alive_ == 3 &&
+        execution_ == kNoPlayer) {
+      // Mayor was lying, drunk or poisoned:
+      AddOr({Not(CreateAliveRoleVar(MAYOR, cur_time_)),
+            CreatePoisonedRoleVar(MAYOR, cur_time_.Count, true)});
+    }
+    // I saw no elegant way of adding this into AddGameNotOverConstraints that
+    // is guarded by next_event_maybe_victory_.
   }
   if (next_event_maybe_victory_) {
     next_event_maybe_victory_ = false;
@@ -1193,8 +1215,9 @@ void GameState::AddDeath(const string& name) {
         AddImplication(night_roles_.back()[i][IMP], Not(poisoner_pick[i]));
       }
     }
+    const bool possible_monk = AlivePlayersClaiming(MONK).size() > 0;
     // The target cannot be Monk-protected by a healthy Monk:
-    if (players_claiming_[MONK].size() > 0) {
+    if (possible_monk) {
       model_.FixVariable(healthy_monk_protected_.back()[death], false);
     }
     // The target cannot be a non-poisoned Soldier:
@@ -1202,15 +1225,15 @@ void GameState::AddDeath(const string& name) {
 
     vector<BoolVar> picks;
     picks.push_back(imp_pick_.back()[death]);
-    for (int i : players_claiming_[MAYOR]) {
-      if (is_alive_[i] && death != i) {  // Possible Mayor bounce
+    for (int i : AlivePlayersClaiming(MAYOR)) {
+      if (death != i) {  // Possible Mayor bounce
         // If Imp picked, Mayor needs to be non-poisoned and not protected by
         // a healthy Monk:
         const BoolVar& picked = imp_pick_.back()[i];
         picks.push_back(picked);
         vector<BoolVar> reqs(
             {night_roles_[0][i][MAYOR], Not(poisoner_pick[i])});
-        if (players_claiming_[MONK].size() > 0) {
+        if (possible_monk) {
           reqs.push_back(Not(healthy_monk_protected_.back()[i]));
         }
         AddImplicationAnd(picked, reqs);
@@ -1221,6 +1244,15 @@ void GameState::AddDeath(const string& name) {
   is_alive_[death] = false;
   --num_alive_;
   next_event_maybe_victory_ = true;
+}
+
+void GameState::AddAllClaims(absl::Span<const Role> roles,
+                             const string& starting_player) {
+  int i = PlayerIndex(starting_player);
+  for (Role role : roles) {
+    AddClaim(players_[i], role);
+    i = (i + 1) % num_players_;
+  }
 }
 
 void GameState::AddClaim(const string& player, Role role) {
@@ -1391,7 +1423,9 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
   const BoolVar& is_empath = day_roles_.back()[i][EMPATH];
   BoolVar poisoned_i = CreatePoisonedRoleVar(EMPATH, cur_time_.Count, true);
   BoolVar poisoned_spy = CreatePoisonedRoleVar(SPY, cur_time_.Count, true);
-  BoolVar poisoned_recluse = (players_claiming_[RECLUSE].size() == 0 ?
+  const bool possible_recluse = (claim_of_player_[ping1] == RECLUSE ||
+                                 claim_of_player_[ping2] == RECLUSE);
+  BoolVar poisoned_recluse = (possible_recluse ?
       model_.FalseVar() :
       CreatePoisonedRoleVar(RECLUSE, cur_time_.Count, true));
   BoolVar ping1_healthy_spy = CreateEquivalentVarAnd(
@@ -1476,7 +1510,7 @@ void GameState::AddClaimFortuneTellerAction(
   BoolVar poisoned_recluse;
   // This optimization is why we want to finish the role claims before claming
   // role info.
-  if (players_claiming_[RECLUSE].size() > 0) {
+  if (AlivePlayersClaiming(RECLUSE).size() > 0) {
     poisoned_recluse = CreatePoisonedRoleVar(RECLUSE, cur_time_.Count, true);
   }
   if (yes) {  // We can only infer Recluse possibilities from Yes answer.
@@ -1576,6 +1610,16 @@ void GameState::AddVictory(Team victory) {
     AddGoodWonConstraints();
   } else {
     AddEvilWonConstraints();
+  }
+}
+
+// Syntactic sugar for the Storyteller perspective.
+void GameState::AddAllShownTokens(absl::Span<const Role> roles) {
+  CHECK_EQ(perspective_, STORYTELLER)
+      << "Only the Storyteller perspective can show all tokens";
+  int i = 0;
+  for (Role role : roles) {
+    AddShownToken(players_[i++], role);
   }
 }
 
@@ -2018,21 +2062,32 @@ void GameState::AddGoodWonConstraints() {
   // OR (silly case, but needs to be addressed):
   // * The Imp killed themselves at night, AND
   // * No-one could catch the starpass (no alive minion - Recluse is optional)
-  // TODO(olaola): Add Mayor win case!
   const auto& day_roles = day_roles_.back();
+  const string time = cur_time_.ToString();
   if (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer) {
+    // Mayor win option:
+    BoolVar mayor_win = model_.FalseVar();
+    if (AlivePlayersClaiming(MAYOR).size() > 0 && num_alive_ == 3) {
+      BoolVar alive = CreateAliveRoleVar(MAYOR, cur_time_);
+      BoolVar poisoned = CreatePoisonedRoleVar(MAYOR, cur_time_.Count, true);
+      mayor_win = CreateEquivalentVarAnd(
+          {alive, Not(poisoned)}, absl::StrFormat("mayor_win_%s", time));
+    }
     if (night_death_ == kNoPlayer) {
-        AddContradiction("No day or night kill, yet Good wins");
-        return;
+      model_.FixVariable(mayor_win, true);
+      return;
     }
     // The silly suicide case:
-    model_.FixVariable(day_roles[night_death_][IMP], true);
+    vector<BoolVar> imp_suicide_reqs({day_roles[night_death_][IMP]});
     for (int i = 0; i < num_players_; ++i) {
       if (is_alive_[i]) {
         // Otherwise they would catch the starpass.
-        model_.FixVariable(is_evil_[i], false);
+        imp_suicide_reqs.push_back(Not(is_evil_[i]));
       }
     }
+    BoolVar imp_suicide = CreateEquivalentVarAnd(
+        imp_suicide_reqs, absl::StrFormat("imp_suicide_good_wins_%s", time));
+    AddOr({mayor_win, imp_suicide});
     return;
   }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
@@ -2053,17 +2108,16 @@ void GameState::AddEvilWonConstraints() {
   // Evil wins only if either:
   // * Non-poisoned Saint was executed, OR
   // * 2 players are alive, one of them the Imp.
-  const auto& day_roles = day_roles_.back();
   if (execution_death_ != kNoPlayer) {
-    AddAnd({day_roles[execution_death_][SAINT],
-            Not(poisoner_pick_[cur_time_.Count][execution_death_])});
+    AddAnd({day_roles_.back()[execution_death_][SAINT],
+            Not(CreatePoisonedRoleVar(SAINT, cur_time_.Count, false))});
     return;
   }
   if (num_alive_ > 2) {
     AddContradiction("No execution and >=3 players alive, yet Evil wins");
     return;
   }
-  AddEqualitySum(CollectAliveRoles(day_roles, {IMP}), 1);
+  AddEqualitySum(CollectAliveRoles(day_roles_.back(), {IMP}), 1);
 }
 
 BoolVar GameState::CreatePoisonerPickedRoleVar(
@@ -2149,6 +2203,8 @@ void GameState::AddNoDeathConstraints() {
   //      * j is dead
   //      * j is a healthy soldier
   //      * j is protected by an alive and healthy Monk
+  const bool possible_alive_monk = AlivePlayersClaiming(MONK).size() > 0;
+  vector<int> alive_mayor_options = AlivePlayersClaiming(MAYOR);
   vector<BoolVar> cases;
   const string time = absl::StrFormat("night_%d", cur_time_.Count);
   const auto& imp_pick = imp_pick_.back();
@@ -2162,13 +2218,13 @@ void GameState::AddNoDeathConstraints() {
   cases.push_back(imp_poisoned);
   // Soldier protection: (optimized for open strategy):
   const auto& poisoner_pick = poisoner_pick_.back();
-  for (int i : players_claiming_[SOLDIER]) {
+  for (int i : AlivePlayersClaiming(SOLDIER)) {
     cases.push_back(CreateEquivalentVarAnd(
       {imp_pick[i], night_roles_[0][i][SOLDIER], Not(poisoner_pick[i])},
       absl::StrFormat("imp_picks_healthy_soldier_%s_%s", players_[i], time)));
   }
   // Monk protection:
-  if (players_claiming_[MONK].size() > 0) {
+  if (possible_alive_monk) {
     for (int i = 0; i < num_players_; ++i) {
       if (is_alive_[i]) {
         cases.push_back(CreateEquivalentVarAnd(
@@ -2180,7 +2236,7 @@ void GameState::AddNoDeathConstraints() {
   }
   // Mayor bounce to no kill.
   vector<BoolVar> bounce_cases(num_players_);
-  if (players_claiming_[MAYOR].size() > 0) {
+  if (alive_mayor_options.size() > 0) {
     for (int j = 0; j < num_players_; ++j) {
       if (!is_alive_[j]) {
         continue;
@@ -2190,17 +2246,14 @@ void GameState::AddNoDeathConstraints() {
       BoolVar healthy_soldier = CreateEquivalentVarAnd(
           {night_roles_[0][j][SOLDIER], Not(poisoner_pick[j])},
           absl::StrFormat("healthy_soldier_%s_%s", players_[j], time));
-      bounce_cases[j] = (players_claiming_[MONK].size() == 0 ?
+      bounce_cases[j] = (!possible_alive_monk ?
           healthy_soldier :
           CreateEquivalentVarOr(
             {healthy_soldier, healthy_monk_protected_.back()[j]},
             absl::StrFormat("mayor_bounce_to_%s_%s", players_[j], time)));
     }
   }
-  for (int i : players_claiming_[MAYOR]) {
-    if (!is_alive_[i]) {
-      continue;
-    }
+  for (int i : alive_mayor_options) {
     vector<BoolVar> valid_bounce_cases;
     for (int j = 0; j < num_players_; ++j) {
       if (is_alive_[j] && j != i) {
@@ -2214,7 +2267,7 @@ void GameState::AddNoDeathConstraints() {
         CreateEquivalentVarOr(valid_bounce_cases, name));
     vector<BoolVar> reqs({imp_pick[i], night_roles_[0][i][MAYOR],
                           Not(poisoner_pick[i]), mayor_bounce_valid});
-    if (players_claiming_[MONK].size() > 0) {
+    if (possible_alive_monk) {
       reqs.push_back(Not(healthy_monk_protected_.back()[i]));
     }
     name = absl::StrFormat("mayor_%s_bounce_no_kill_%s", players_[i], time);

@@ -129,13 +129,8 @@ TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", BUTLER);
-  g.AddClaim("P6", WASHERWOMAN);
-  g.AddClaim("P7", MONK);
-  g.AddClaim("P1", LIBRARIAN);  // Evil team lie
-  g.AddClaim("P2", SLAYER);
+  g.AddAllClaims(
+      {LIBRARIAN, SLAYER, CHEF, SAINT, BUTLER, WASHERWOMAN, MONK}, "P1");
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", BUTLER},
        {"P6", WASHERWOMAN}, {"P7", MONK}}});
@@ -148,13 +143,8 @@ TEST(WorldEnumeration, MinionPerspectiveBaronDrunk) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", WASHERWOMAN);
-  g.AddClaim("P7", MONK);
-  g.AddClaim("P1", LIBRARIAN);  // Evil team lie
-  g.AddClaim("P2", SLAYER);
+  g.AddAllClaims(
+      {LIBRARIAN, SLAYER, CHEF, SAINT, MAYOR, WASHERWOMAN, MONK}, "P1");
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", SAINT}, {"P5", MAYOR},
        {"P6", WASHERWOMAN}, {"P7", DRUNK}},
@@ -173,13 +163,8 @@ TEST(WorldEnumeration, MinionPerspectivePoisonerFull) {
   g.AddShownToken("P1", POISONER);
   g.AddMinionInfo("P1", "P2", {});  // P1 Poisoner, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", WASHERWOMAN);
-  g.AddClaim("P7", MONK);
-  g.AddClaim("P1", EMPATH);  // Evil team lie
-  g.AddClaim("P2", SLAYER);
+  g.AddAllClaims(
+      {EMPATH, SLAYER, CHEF, VIRGIN, SOLDIER, WASHERWOMAN, MONK}, "P1");
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SOLDIER}, {"P6", WASHERWOMAN}, {"P7", MONK}}});
@@ -191,11 +176,7 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5Players) {
   g.AddNight(1);
   g.AddShownToken("P1", POISONER);  // P1 Poisoner, but they don't know the Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);  // Poisoner lies
-  g.AddClaim("P2", SLAYER);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SOLDIER);
+  g.AddAllClaims({EMPATH, SLAYER, CHEF, VIRGIN, SOLDIER}, "P1");
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", SLAYER}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", IMP}},
@@ -213,11 +194,9 @@ TEST(WorldEnumeration, MinionPerspectivePoisoner5PlayersFull) {
   g.AddNight(1);
   g.AddShownToken("P1", POISONER);  // P1 Poisoner, but they don't know the Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);  // Poisoner lies
-  g.AddClaim("P2", SAINT);  // P2 claimed outsider, which P1 knows is a lie.
-  g.AddClaim("P3", CHEF);  // Therefore, P1 deduces P2 is the Imp.
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SOLDIER);
+  g.AddAllClaims({EMPATH, SAINT, CHEF, VIRGIN, SOLDIER}, "P1");
+  // P2 claimed outsider, which P1 knows is a lie. Therefore, P1 deduces P2 is
+  // the Imp.
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SOLDIER}}});
@@ -230,13 +209,9 @@ TEST(WorldEnumeration, DemonPerspective7Players) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);  // Imp lies
-  g.AddClaim("P2", SAINT);  // Minion lies
-  g.AddClaim("P3", UNDERTAKER);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);  // No true outsider claims, so no Baron
+  g.AddAllClaims(
+      {EMPATH, SAINT, UNDERTAKER, VIRGIN, MAYOR, SLAYER, RAVENKEEPER}, "P1");
+  // No true outsider claims, so no Baron
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", SPY}, {"P3", UNDERTAKER}, {"P4", VIRGIN},
        {"P5", MAYOR}, {"P6", SLAYER}, {"P7", RAVENKEEPER}},
@@ -253,13 +228,9 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);  // Imp lies
-  g.AddClaim("P2", SAINT);  // Minion lies
-  g.AddClaim("P3", CHEF);  // This is impossible, since Chef is a bluff.
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);
+  g.AddAllClaims(
+      {EMPATH, SAINT, CHEF, VIRGIN, MAYOR, SLAYER, RAVENKEEPER}, "P1");
+  // This is impossible, since Chef is a demon bluff.
   EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
 }
 
@@ -269,13 +240,9 @@ TEST(Investigator, DemonLearnsMinionRole) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, CHEF, SOLDIER});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);  // Imp lies
-  g.AddClaim("P2", SAINT);  // Minion claims only outsider, so no Baron.
-  g.AddClaim("P3", INVESTIGATOR);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);
+  g.AddAllClaims(
+      {EMPATH, SAINT, INVESTIGATOR, VIRGIN, MAYOR, SLAYER, RAVENKEEPER}, "P1");
+  // Minion claims only outsider, so no Baron.
   g.AddClaimInvestigatorInfo("P3", "P2", "P5", POISONER);
   // Minion can only be a Poisoner:
   vector<unordered_map<string, Role>> expected_worlds({
@@ -290,13 +257,9 @@ TEST(Washerwoman, VirginConfirmsWasherwoman) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", SAINT);
-  g.AddClaim("P3", WASHERWOMAN);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddAllClaims(
+      {EMPATH, SAINT, WASHERWOMAN, VIRGIN, MAYOR, SLAYER, RECLUSE}, "P1");
+  // Baron learns that P6 is the Drunk.
   g.AddClaimWasherwomanInfo("P3", "P4", "P5", MAYOR);
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
@@ -312,13 +275,9 @@ TEST(Librarian, VirginConfirmsLibrarian) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", SAINT);
-  g.AddClaim("P3", LIBRARIAN);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", MAYOR);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RECLUSE);  // Baron learns that P6 is the Drunk.
+  g.AddAllClaims(
+      {EMPATH, SAINT, LIBRARIAN, VIRGIN, MAYOR, SLAYER, RECLUSE}, "P1");
+  // Baron learns that P6 is the Drunk.
   g.AddClaimLibrarianInfo("P3", "P1", "P6", DRUNK);
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
@@ -355,13 +314,8 @@ TEST(Virgin, HealthyVirginProc) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SAINT);
-  g.AddClaim("P6", SOLDIER);
-  g.AddClaim("P7", INVESTIGATOR);
+  g.AddAllClaims(
+      {EMPATH, MAYOR, CHEF, VIRGIN, SAINT, SOLDIER, INVESTIGATOR}, "P1");
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
   vector<unordered_map<string, Role>> expected_worlds({
@@ -378,13 +332,8 @@ TEST(Virgin, DrunkVirginNonProc) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SAINT);
-  g.AddClaim("P6", SOLDIER);
-  g.AddClaim("P7", INVESTIGATOR);
+  g.AddAllClaims(
+      {EMPATH, MAYOR, CHEF, VIRGIN, SAINT, SOLDIER, INVESTIGATOR}, "P1");
   g.AddNomination("P3", "P4");
   g.AddNoStorytellerAnnouncement();  // No proc.
   vector<unordered_map<string, Role>> expected_worlds({
@@ -402,14 +351,9 @@ TEST(Virgin, PoisonedVirginNonProc) {
   g.AddMinionInfo("P1", "P2", {});
   g.AddPoisonerAction("P1", "P4");
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", SAINT);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", EMPATH);
-  g.AddClaim("P6", SOLDIER);
-  g.AddClaim("P7", INVESTIGATOR);
-  g.AddNomination("P3", "P4");
+  g.AddAllClaims(
+      {MONK, SAINT, CHEF, VIRGIN, EMPATH, SOLDIER, INVESTIGATOR}, "P1");
+  g.AddNomination("P5", "P4");
   g.AddNoStorytellerAnnouncement();  // No proc.
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", POISONER}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
@@ -423,13 +367,8 @@ TEST(Undertaker, HealthyVirginProcDrunkUndertaker) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SAINT);
-  g.AddClaim("P6", SOLDIER);
-  g.AddClaim("P7", UNDERTAKER);
+  g.AddAllClaims(
+      {EMPATH, MAYOR, CHEF, VIRGIN, SAINT, SOLDIER, UNDERTAKER}, "P1");
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
   g.AddDeath("P3");
@@ -448,13 +387,8 @@ TEST(Undertaker, HealthyUndertakerUseless) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {});  // P1 Baron, P2 Imp
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", SAINT);
-  g.AddClaim("P6", SOLDIER);
-  g.AddClaim("P7", UNDERTAKER);
+  g.AddAllClaims(
+      {EMPATH, MAYOR, CHEF, VIRGIN, SAINT, SOLDIER, UNDERTAKER}, "P1");
   g.AddNomination("P3", "P4");
   g.AddExecution("P3");
   g.AddDeath("P3");
@@ -516,13 +450,9 @@ TEST(NightDeaths, ImpDeducesPoisoner) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, MONK});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", SAINT);  // Not a Baron, but other options are all in.
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", RAVENKEEPER);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", FORTUNE_TELLER);
+  g.AddAllClaims(
+      {MAYOR, SAINT, CHEF, RAVENKEEPER, SOLDIER, SLAYER, FORTUNE_TELLER}, "P1");
+  // Minion is not a Baron, but other options are all in.
   g.AddNight(2);
   g.AddImpAction("P1", "P5");
   g.AddDay(2);
@@ -539,13 +469,8 @@ TEST(NightDeaths, ImpDeducesSoberMonk) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", RAVENKEEPER);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", MONK);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, CHEF, SAINT, SOLDIER, SLAYER, MONK}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P6");
   g.AddDay(2);
@@ -560,13 +485,8 @@ TEST(NightDeaths, ImpDeducesDrunkSoldier) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", RAVENKEEPER);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", MONK);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, CHEF, SAINT, SOLDIER, SLAYER, MONK}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P5");
   g.AddDay(2);
@@ -583,13 +503,8 @@ TEST(NightDeaths, MayorBounceToSoldier) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", RAVENKEEPER);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", MAYOR);
-  g.AddClaim("P7", UNDERTAKER);
+  g.AddAllClaims(
+      {EMPATH, RAVENKEEPER, CHEF, SAINT, SOLDIER, MAYOR, UNDERTAKER}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P6");
   g.AddDay(2);
@@ -606,23 +521,12 @@ TEST(NightDeaths, MayorBounceToSoldier) {
 TEST(NightDeaths, MayorBounceToMonkProtectedTarget) {
   GameState g = FromRoles({IMP, BARON, MONK, MAYOR, SAINT, RECLUSE, EMPATH});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", BARON);
-  g.AddShownToken("P3", MONK);
-  g.AddShownToken("P4", MAYOR);
-  g.AddShownToken("P5", SAINT);
-  g.AddShownToken("P6", RECLUSE);
-  g.AddShownToken("P7", EMPATH);
+  g.AddAllShownTokens({IMP, BARON, MONK, MAYOR, SAINT, RECLUSE, EMPATH});
   g.AddDemonInfo("P1", {"P2"}, {RAVENKEEPER, FORTUNE_TELLER, SOLDIER});
   g.AddMinionInfo("P2", "P1", {});
   g.AddDay(1);
-  g.AddClaim("P1", RAVENKEEPER);
-  g.AddClaim("P2", SOLDIER);
-  g.AddClaim("P3", MONK);
-  g.AddClaim("P4", MAYOR);
-  g.AddClaim("P5", SAINT);
-  g.AddClaim("P6", RECLUSE);
-  g.AddClaim("P7", EMPATH);
+  g.AddAllClaims(
+      {RAVENKEEPER, SOLDIER, MONK, MAYOR, SAINT, RECLUSE, EMPATH}, "P1");
   g.AddNight(2);
   g.AddMonkAction("P3", "P7");  // Monk is protecting P7, not the Mayor.
   g.AddImpAction("P1", "P4");  // Imp tries to kill the Mayor.
@@ -634,17 +538,9 @@ TEST(NightDeaths, MayorBounceToMonkProtectedTarget) {
 TEST(NightDeaths, MayorBounce) {
   GameState g = FromRoles({IMP, BARON, MAYOR, SAINT, RECLUSE});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", BARON);
-  g.AddShownToken("P3", MAYOR);
-  g.AddShownToken("P4", SAINT);
-  g.AddShownToken("P5", RECLUSE);
+  g.AddAllShownTokens({IMP, BARON, MAYOR, SAINT, RECLUSE});
   g.AddDay(1);
-  g.AddClaim("P1", RAVENKEEPER);
-  g.AddClaim("P2", SOLDIER);
-  g.AddClaim("P3", MAYOR);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", RECLUSE);
+  g.AddAllClaims({RAVENKEEPER, SOLDIER, MAYOR, SAINT, RECLUSE}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P3");  // Imp tries to kill the Mayor.
   g.AddDay(2);
@@ -655,17 +551,9 @@ TEST(NightDeaths, MayorBounce) {
 TEST(Ravenkeeper, LearnsTrueRole) {
   GameState g = FromRoles({IMP, BARON, RAVENKEEPER, RECLUSE, SAINT});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", BARON);
-  g.AddShownToken("P3", RAVENKEEPER);
-  g.AddShownToken("P4", RECLUSE);
-  g.AddShownToken("P5", SAINT);
+  g.AddAllShownTokens({IMP, BARON, RAVENKEEPER, RECLUSE, SAINT});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", SLAYER);
-  g.AddClaim("P3", RAVENKEEPER);
-  g.AddClaim("P4", RECLUSE);
-  g.AddClaim("P5", SAINT);
+  g.AddAllClaims({MAYOR, SLAYER, RAVENKEEPER, RECLUSE, SAINT}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P3");
   g.AddRavenkeeperAction("P3", "P2", BARON);
@@ -678,17 +566,9 @@ TEST(Ravenkeeper, LearnsTrueRole) {
 TEST(Ravenkeeper, DrunkRavenkeeperLearnsFalseRole) {
   GameState g = FromRoles({IMP, BARON, DRUNK, SLAYER, SAINT});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", BARON);
-  g.AddShownToken("P3", RAVENKEEPER);
-  g.AddShownToken("P4", SLAYER);
-  g.AddShownToken("P5", SAINT);
+  g.AddAllShownTokens({IMP, BARON, RAVENKEEPER, SLAYER, SAINT});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", UNDERTAKER);
-  g.AddClaim("P3", RAVENKEEPER);
-  g.AddClaim("P4", SLAYER);
-  g.AddClaim("P5", SAINT);
+  g.AddAllClaims({MAYOR, UNDERTAKER, RAVENKEEPER, SLAYER, SAINT}, "P1");
   g.AddNight(2);
   g.AddImpAction("P1", "P3");
   g.AddRavenkeeperAction("P3", "P2", UNDERTAKER);
@@ -701,17 +581,9 @@ TEST(Ravenkeeper, DrunkRavenkeeperLearnsFalseRole) {
 TEST(Ravenkeeper, PoisonedRavenkeeperLearnsFalseRole) {
   GameState g = FromRoles({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", POISONER);
-  g.AddShownToken("P3", RAVENKEEPER);
-  g.AddShownToken("P4", SLAYER);
-  g.AddShownToken("P5", UNDERTAKER);
+  g.AddAllShownTokens({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", SAINT);
-  g.AddClaim("P3", RAVENKEEPER);
-  g.AddClaim("P4", SLAYER);
-  g.AddClaim("P5", UNDERTAKER);
+  g.AddAllClaims({MAYOR, SAINT, RAVENKEEPER, SLAYER, UNDERTAKER}, "P1");
   g.AddNight(2);
   g.AddPoisonerAction("P2", "P3");
   g.AddImpAction("P1", "P3");
@@ -725,17 +597,9 @@ TEST(Ravenkeeper, PoisonedRavenkeeperLearnsFalseRole) {
 TEST(Ravenkeeper, InvalidRavenkeeperLearnsFalseRole) {
   GameState g = FromRoles({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", POISONER);
-  g.AddShownToken("P3", RAVENKEEPER);
-  g.AddShownToken("P4", SLAYER);
-  g.AddShownToken("P5", UNDERTAKER);
+  g.AddAllShownTokens({IMP, POISONER, RAVENKEEPER, SLAYER, UNDERTAKER});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", SAINT);
-  g.AddClaim("P3", RAVENKEEPER);
-  g.AddClaim("P4", SLAYER);
-  g.AddClaim("P5", UNDERTAKER);
+  g.AddAllClaims({MAYOR, SAINT, RAVENKEEPER, SLAYER, UNDERTAKER}, "P1");
   g.AddNight(2);
   g.AddPoisonerAction("P2", "P4");  // Ravenkeeper is healthy.
   g.AddImpAction("P1", "P3");
@@ -750,18 +614,10 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   GameState g = FromRolesWithRedHerring(
       {IMP, BARON, FORTUNE_TELLER, RECLUSE, SAINT}, "P5");
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddShownToken("P2", BARON);
-  g.AddShownToken("P3", FORTUNE_TELLER);
-  g.AddShownToken("P4", RECLUSE);
-  g.AddShownToken("P5", SAINT);
+  g.AddAllShownTokens({IMP, BARON, FORTUNE_TELLER, RECLUSE, SAINT});
   g.AddFortuneTellerAction("P3", "P1", "P2", true);
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", SLAYER);
-  g.AddClaim("P3", FORTUNE_TELLER);
-  g.AddClaim("P4", RECLUSE);
-  g.AddClaim("P5", SAINT);
+  g.AddAllClaims({MAYOR, SLAYER, FORTUNE_TELLER, RECLUSE, SAINT}, "P1");
   g.AddClaimFortuneTellerAction("P3", "P1", "P2", true);  // P1 is Imp
   g.AddNight(2);
   g.AddImpAction("P1", "P2");
@@ -788,16 +644,9 @@ TEST(Empath, LearnsTrueInfo) {
   g.AddShownToken("P1", EMPATH);
   g.AddEmpathInfo("P1", 2);
   g.AddDay(1);
-  g.AddClaim("P1", EMPATH);
-  g.AddClaim("P2", VIRGIN);  // Actually Spy
-  g.AddClaim("P3", SOLDIER);
-  g.AddClaim("P4", MAYOR);
-  g.AddClaim("P5", SLAYER);
-  g.AddClaim("P6", RAVENKEEPER);
-  g.AddClaim("P7", SAINT);  // Actually Imp
-  g.AddClaim("P8", MAYOR);  // Actually Baron
-  g.AddClaim("P9", CHEF);
-  g.AddClaim("P10", RECLUSE);
+  // Virgin (P2) is actually the Spy, Saint (P7): Imp, Mayor (P8): Baron.
+  g.AddAllClaims({EMPATH, VIRGIN, SOLDIER, MAYOR, SLAYER, RAVENKEEPER,
+                  SAINT, MAYOR, CHEF, RECLUSE}, "P1");
   g.AddClaimEmpathInfo("P1", 2);  // Both Spy and Recluse proc evil
   g.AddNomination("P10", "P4");
   g.AddVote({"P1", "P2", "P3", "P8", "P9"}, "P4");
@@ -845,13 +694,8 @@ TEST(Slayer, ImpDeducesDrunkSlayer) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2"}, {EMPATH, RECLUSE, FORTUNE_TELLER});
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", RAVENKEEPER);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", SAINT);
-  g.AddClaim("P5", SOLDIER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", MONK);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, CHEF, SAINT, SOLDIER, SLAYER, MONK}, "P1");
   g.AddSlayerAction("P6", "P1");
   g.AddNoStorytellerAnnouncement();
   vector<unordered_map<string, Role>> expected_worlds({
@@ -866,13 +710,8 @@ TEST(ScarletWomanProc, ExecuteImp) {
   g.AddShownToken("P5", SCARLET_WOMAN);
   g.AddMinionInfo("P5", "P1", {});  // P5 SW, P1 Imp
   g.AddDay(1);
-  g.AddClaim("P1", SOLDIER);  // Imp lies
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", FORTUNE_TELLER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);
+  g.AddAllClaims(
+      {SOLDIER, MAYOR, CHEF, VIRGIN, FORTUNE_TELLER, SLAYER, MONK}, "P1");
   g.AddNomination("P2", "P1");
   g.AddVote({"P2", "P3", "P4", "P6"}, "P1");
   g.AddExecution("P1");
@@ -880,7 +719,7 @@ TEST(ScarletWomanProc, ExecuteImp) {
   g.AddNight(2);
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
-       {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+       {"P5", IMP}, {"P6", SLAYER}, {"P7", MONK}}});
   EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
@@ -890,19 +729,14 @@ TEST(ScarletWomanProc, SlayerKillsImp) {
   g.AddShownToken("P5", SCARLET_WOMAN);
   g.AddMinionInfo("P5", "P1", {});  // P5 SW, P1 Imp
   g.AddDay(1);
-  g.AddClaim("P1", SOLDIER);  // Imp lies
-  g.AddClaim("P2", MAYOR);
-  g.AddClaim("P3", CHEF);
-  g.AddClaim("P4", VIRGIN);
-  g.AddClaim("P5", FORTUNE_TELLER);
-  g.AddClaim("P6", SLAYER);
-  g.AddClaim("P7", RAVENKEEPER);
+  g.AddAllClaims(
+      {SOLDIER, MAYOR, CHEF, VIRGIN, FORTUNE_TELLER, SLAYER, MONK}, "P1");
   g.AddSlayerAction("P6", "P1");
   g.AddDeath("P1");
   g.AddNight(2);
   vector<unordered_map<string, Role>> expected_worlds({
       {{"P1", IMP}, {"P2", MAYOR}, {"P3", CHEF}, {"P4", VIRGIN},
-       {"P5", IMP}, {"P6", SLAYER}, {"P7", RAVENKEEPER}}});
+       {"P5", IMP}, {"P6", SLAYER}, {"P7", MONK}}});
   EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
@@ -910,11 +744,7 @@ TEST(Soldier, InvalidImpKillsHealthySoldier) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
   g.AddDay(1);
-  g.AddClaim("P1", WASHERWOMAN);
-  g.AddClaim("P2", RECLUSE);
-  g.AddClaim("P3", SAINT);
-  g.AddClaim("P4", BUTLER);
-  g.AddClaim("P5", SOLDIER);
+  g.AddAllClaims({WASHERWOMAN, RECLUSE, SAINT, BUTLER, SOLDIER}, "P1");
   g.AddClaimWasherwomanInfo("P1", "P4", "P5", SOLDIER);
   const SolverRequest& r = FromCurrentRoles({{"P5", SOLDIER}});
   // P5 is SOLDIER in all worlds:
@@ -934,19 +764,17 @@ TEST(GameEndConditions, ExecuteImpGameOver) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddVictory(GOOD);
-  SolverResponse r = g.ValidWorld();
-  EXPECT_EQ(r.worlds_size(), 1);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
   SolverRequest request;
   auto* pr = request.mutable_current_assumptions()->add_roles();
   pr->set_player("P1");
   pr->set_role(IMP);
   pr->set_is_not(true);
-  r = g.ValidWorld(request);
-  EXPECT_EQ(r.worlds_size(), 0);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
   pr->set_is_not(false);
   request.mutable_starting_assumptions()->add_roles_in_play(SCARLET_WOMAN);
-  r = g.ValidWorld(request);
-  EXPECT_EQ(r.worlds_size(), 0);  // Because the SW would have proc-ed.
+  // Because the SW would have proc-ed.
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
 }
 
 TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
@@ -978,13 +806,79 @@ TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
   g.AddDeath("P1");
   g.AddNight(2);  // The game continues, so P1 Imp -> SW in play.
   SolverRequest request = FromCurrentRoles({{"P1", IMP}});
-  SolverResponse r = g.ValidWorld(request);
-  EXPECT_EQ(r.worlds_size(), 1);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
   request.mutable_starting_assumptions()->add_roles_not_in_play(SCARLET_WOMAN);
-  r = g.ValidWorld(request);
-  EXPECT_EQ(r.worlds_size(), 0);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
 }
 
+TEST(GameEndConditions, ExecuteSaintGameOver) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", SAINT);
+  g.AddDay(1);
+  g.AddAllClaims({SAINT, MAYOR, SOLDIER, SLAYER, RECLUSE}, "P1");
+  g.AddNomination("P2", "P1");
+  g.AddVote({"P2", "P3", "P4"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddVictory(EVIL);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(GameEndConditions, ExecuteSaintGameNotOverPoisoner) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(6));
+  g.AddNight(1);
+  g.AddShownToken("P1", SAINT);
+  g.AddDay(1);
+  g.AddAllClaims({SAINT, MAYOR, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddNomination("P2", "P1");
+  g.AddVote({"P2", "P3", "P4"}, "P1");
+  g.AddExecution("P1");
+  g.AddDeath("P1");
+  g.AddNight(2);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  // Poisoner must have got us:
+  EXPECT_EQ(g.ValidWorld(FromNotInPlayRoles({POISONER})).worlds_size(), 0);
+}
+
+TEST(GameEndConditions, MayorWin) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", MAYOR);
+  g.AddDay(1);
+  g.AddAllClaims({MAYOR, SAINT, SOLDIER, SLAYER, RECLUSE}, "P1");
+  g.AddNomination("P2", "P5");
+  g.AddVote({"P3", "P4", "P5"}, "P5");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P4");  // Final 3.
+  g.AddVictory(GOOD);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(GameEndConditions, PoisonedMayorNoWin) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", MAYOR);
+  g.AddDay(1);
+  g.AddAllClaims({MAYOR, MONK, SOLDIER, SLAYER, RAVENKEEPER}, "P1");
+  g.AddNomination("P2", "P5");
+  g.AddVote({"P3", "P4", "P5"}, "P5");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P4");  // Final 3.
+  g.AddNight(3);
+  g.AddDay(3);
+  g.AddDeath("P2");
+  g.AddVictory(EVIL);
+  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  // Poisoner must have got us:
+  EXPECT_EQ(g.ValidWorld(FromNotInPlayRoles({POISONER})).worlds_size(), 0);
+}
 }  // namespace
 }  // namespace botc
 

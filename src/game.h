@@ -79,6 +79,10 @@ class GameState {
   void AddExecution(const string& name);
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
+  // Syntactic sugar for all role claims at once, which must always happen at
+  // start of day 1:
+  void AddAllClaims(absl::Span<const Role> roles,
+                    const string& starting_player);
   void AddClaim(const string& player, Role role);
   void AddClaimWasherwomanInfo(const string& player, const LearnRoleInfo& info);
   void AddClaimWasherwomanInfo(const string& player, const string& ping1,
@@ -121,7 +125,8 @@ class GameState {
   // An event to signal no event. Most common use-case is pre-solve, to
   // indicate there was no night death, or the game isn't over.
   void AddNoStorytellerAnnouncement();
-
+  // Syntactic sugar for the Storyteller perspective.
+  void AddAllShownTokens(absl::Span<const Role> roles);
   void AddShownToken(const string& player, Role role);
   void AddMinionInfo(const string& player,
                      const MinionInfo& minion_info);
@@ -306,6 +311,7 @@ class GameState {
                               CpModelBuilder* model,
                               const string& filename) const;
   vector<int> AliveNeighbors(int player) const;
+  vector<int> AlivePlayersClaiming(Role role) const;
 
   Perspective perspective_;
   vector<string> players_;
