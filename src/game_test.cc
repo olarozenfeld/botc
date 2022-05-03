@@ -42,6 +42,69 @@ GameState FromRoles(absl::Span<const Role> roles) {
   return FromRolesWithRedHerring(roles, "");
 }
 
+TEST(Proto, ToAndFromProto) {
+  SpyInfo spy_info;
+  GameState g = FromRolesWithRedHerring(
+      {IMP, SPY, SCARLET_WOMAN, POISONER, BUTLER, DRUNK, WASHERWOMAN, LIBRARIAN,
+       INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER, UNDERTAKER, MONK,
+       RAVENKEEPER}, "P11");
+  g.AddNight(1);
+  g.AddAllShownTokens({IMP, SPY, SCARLET_WOMAN, POISONER, BUTLER, SLAYER,
+                       WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF,
+                       EMPATH, FORTUNE_TELLER, UNDERTAKER, MONK,
+                       RAVENKEEPER});
+  g.AddDemonInfo("P1", {"P2", "P3", "P4"}, {VIRGIN, SOLDIER, MAYOR});
+  g.AddMinionInfo("P2", "P1", {"P3", "P4"});
+  g.AddMinionInfo("P3", "P1", {"P2", "P4"});
+  g.AddMinionInfo("P4", "P1", {"P2", "P3"});
+  g.AddPoisonerAction("P4", "P9");
+  g.AddSpyInfo("P2", spy_info);
+  g.AddWasherwomanInfo("P7", "P1", "P2", SOLDIER);
+  g.AddLibrarianInfo("P8", "P5", "P3", BUTLER);
+  g.AddInvestigatorInfo("P9", "P11", "P12", SCARLET_WOMAN);  // Poisoned
+  g.AddChefInfo("P10", 3);
+  g.AddEmpathInfo("P11", 0);
+  g.AddFortuneTellerAction("P12", "P11", "P13", true);
+  g.AddButlerAction("P5", "P4");
+  g.AddDay(1);
+  g.AddAllClaims(
+      {SOLDIER, MAYOR, SOLDIER, SAINT, BUTLER, SLAYER, WASHERWOMAN,
+       LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER, UNDERTAKER, MONK,
+       RAVENKEEPER},
+      "P1");
+  g.AddClaimWasherwomanInfo("P7", "P1", "P2", SOLDIER);
+  g.AddClaimLibrarianInfo("P8", "P5", "P3", BUTLER);
+  g.AddClaimInvestigatorInfo("P9", "P11", "P12", SCARLET_WOMAN);
+  g.AddClaimChefInfo("P10", 3);
+  g.AddClaimEmpathInfo("P11", 0);
+  g.AddClaimFortuneTellerAction("P12", "P11", "P13", true);
+  g.AddClaimButlerAction("P5", "P4");
+  g.AddSlayerAction("P6", "P1");  // Drunk
+  g.AddNomination("P9", "P11");
+  g.AddVote({"P10", "P11", "P12", "P1", "P2", "P3", "P5", "P7"}, "P11");
+  g.AddExecution("P11");
+  g.AddDeath("P11");
+  g.AddNight(2);
+  g.AddPoisonerAction("P4", "P12");
+  g.AddSpyInfo("P2", spy_info);
+  g.AddMonkAction("P14", "P13");
+  g.AddImpAction("P1", "P15");
+  g.AddRavenkeeperAction("P15", "P4", POISONER);
+  g.AddUndertakerInfo("P13", EMPATH);
+  g.AddFortuneTellerAction("P12", "P9", "P2", false);
+  g.AddDay(2);
+  g.AddDeath("P15");
+  g.AddClaimMonkAction("P14", "P13");
+  g.AddClaimRavenkeeperAction("P15", "P4", POISONER);
+  g.AddClaimUndertakerInfo("P13", EMPATH);
+  g.AddClaimFortuneTellerAction("P12", "P9", "P2", false);
+
+  GameLog pb(g.ToProto());
+  // Unfortunately, the testing::EqualsProto matcher is not OSS yet
+  // (see https://github.com/google/googletest/issues/1761)
+  EXPECT_EQ(pb.DebugString(), GameState::FromProto(pb).ToProto().DebugString());
+}
+
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
   GameState g = FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN});
   EXPECT_EQ(g.SolveGame().worlds_size(), 1);

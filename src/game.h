@@ -66,6 +66,9 @@ class GameState {
   static GameState FromObserverPerspective(absl::Span<const string> players);
   static GameState FromPlayerPerspective(absl::Span<const string> players);
   static GameState FromProto(const GameLog& log);
+  static GameState ReadFromFile(const string& filename);
+  GameLog ToProto() const;
+  void WriteToFile(const string& filename) const;
 
   // Game events.
   void AddEvent(const Event& event);
@@ -229,7 +232,8 @@ class GameState {
     return SolveGame(r);
   }
 
-  const CpModelBuilder& SatModel() const { return model_; }  // for debugging
+  void WriteModelToFile(const string& filename) const;
+  void WriteModelVariablesToFile(const string& filename) const;
 
  private:
   GameState(Perspective perspective, const Setup& setup);
@@ -313,6 +317,7 @@ class GameState {
   vector<int> AliveNeighbors(int player) const;
   vector<int> AlivePlayersClaiming(Role role) const;
 
+  GameLog log_;  // Current state as a proto.
   Perspective perspective_;
   vector<string> players_;
   unordered_map<string, int> player_index_;

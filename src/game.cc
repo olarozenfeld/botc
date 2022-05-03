@@ -14,13 +14,14 @@
 #include "src/game.h"
 
 #include <algorithm>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
+#include "src/util.h"
 
 namespace botc {
 
@@ -59,9 +60,7 @@ const Role kFirstNightRoles[] = {WASHERWOMAN, LIBRARIAN, INVESTIGATOR, CHEF};
 
 Setup SetupProto(absl::Span<const string> players) {
   Setup setup;
-  for (const string& player : players) {
-    setup.add_players(player);
-  }
+  setup.mutable_players()->Assign(players.begin(), players.end());
   return setup;
 }
 
@@ -200,6 +199,20 @@ GameState GameState::FromProto(const GameLog& log) {
   return g;
 }
 
+GameState GameState::ReadFromFile(const string& filename) {
+  GameLog log;
+  ReadProtoFromFile(filename, &log);
+  return FromProto(log);
+}
+
+GameLog GameState::ToProto() const {
+  return log_;
+}
+
+void GameState::WriteToFile(const string& filename) const {
+  WriteProtoToFile(filename, ToProto());
+}
+
 int GameState::PlayerIndex(const string& name) const {
   const auto& it = player_index_.find(name);
   CHECK(it != player_index_.end()) << "Invalid player name: " << name;
@@ -246,6 +259,8 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       << "Need to specify perspective";
   CHECK_GE(num_players_, 5);
   CHECK_LE(num_players_, 15);
+  log_.set_perspective(perspective_);
+  *(log_.mutable_setup()) = setup;
   num_outsiders_ = kNumOutsiders[num_players_ - 5];
   num_minions_ = kNumMinions[num_players_ - 5];
   int player_index = 0;
@@ -595,7 +610,8 @@ void GameState::InitIsEvilVars() {
 }
 
 void GameState::AddNoStorytellerAnnouncement() {
-  BeforeEvent(Event::DETAILS_NOT_SET);
+  log_.add_events()->set_no_storyteller_announcement(true);
+  BeforeEvent(Event::kNoStorytellerAnnouncement);
 }
 
 void GameState::BeforeEvent(Event::DetailsCase event_type) {
@@ -674,6 +690,7 @@ void GameState::AddEvent(const Event& event) {
 }
 
 void GameState::AddDay(int count) {
+  log_.add_events()->set_day(count);
   BeforeEvent(Event::kDay);
   CHECK(!cur_time_.IsDay)
       << "Trying to begin another day during day " << cur_time_.Count;
@@ -693,6 +710,7 @@ void GameState::AddDay(int count) {
 }
 
 void GameState::AddNight(int count) {
+  log_.add_events()->set_night(count);
   BeforeEvent(Event::kNight);
   CHECK(cur_time_.IsDay || cur_time_.Count == 0)
     << "Trying to begin another night during night " << cur_time_.Count;
@@ -1054,6 +1072,9 @@ void GameState::AddNomination(const Nomination& nomination) {
 }
 
 void GameState::AddNomination(const string& nominator, const string& nominee) {
+  auto* nomination_pb = log_.add_events()->mutable_nomination();
+  nomination_pb->set_nominator(nominator);
+  nomination_pb->set_nominee(nominee);
   BeforeEvent(Event::kNomination);
   CHECK(cur_time_.IsDay) << "Nominations can only occur during the day.";
   const int nominator_index = PlayerIndex(nominator);
@@ -1083,6 +1104,9 @@ void GameState::AddVote(const Vote& vote) {
 
 void GameState::AddVote(absl::Span<const string> votes,
                         const string& on_the_block) {
+  Vote* vote_pb = log_.add_events()->mutable_vote();
+  vote_pb->mutable_votes()->Assign(votes.begin(), votes.end());
+  vote_pb->set_on_the_block(on_the_block);
   BeforeEvent(Event::kVote);
   CHECK(!nominations_.empty()) << "A vote must have a preceding nomination.";
   const auto& nomination = nominations_.back();
@@ -1136,6 +1160,7 @@ void GameState::AddVote(absl::Span<const string> votes,
 }
 
 void GameState::AddExecution(const string& name) {
+  log_.add_events()->set_execution(name);
   BeforeEvent(Event::kExecution);
   CHECK(cur_time_.IsDay) << "Executions can only occur during the day.";
   const int executee = PlayerIndex(name);
@@ -1156,6 +1181,7 @@ void GameState::AddExecution(const string& name) {
 }
 
 void GameState::AddDeath(const string& name) {
+  log_.add_events()->set_death(name);
   BeforeEvent(Event::kDeath);
   // Deaths are Storyteller announcements of deaths, hence they only occur
   // during the day.
@@ -1256,6 +1282,9 @@ void GameState::AddAllClaims(absl::Span<const Role> roles,
 }
 
 void GameState::AddClaim(const string& player, Role role) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->set_role(role);
   BeforeEvent(Event::kClaim);
   CHECK(cur_time_.IsDay) << "Claims can only be made during the day";
   // The open strategy assumes that only Evil lies. Hence:
@@ -1283,43 +1312,33 @@ void GameState::AddClaim(const Claim& claim) {
   }
   switch (claim.info().details_case()) {
     case RoleAction::kWasherwomanInfo:
-      AddClaim(player, WASHERWOMAN);
       AddClaimWasherwomanInfo(player, claim.info().washerwoman_info());
       break;
     case RoleAction::kLibrarianInfo:
-      AddClaim(player, LIBRARIAN);
       AddClaimLibrarianInfo(player, claim.info().librarian_info());
       break;
     case RoleAction::kInvestigatorInfo:
-      AddClaim(player, INVESTIGATOR);
       AddClaimInvestigatorInfo(player, claim.info().investigator_info());
       break;
     case RoleAction::kChefInfo:
-      AddClaim(player, CHEF);
       AddClaimChefInfo(player, claim.info().chef_info());
       break;
     case RoleAction::kEmpathInfo:
-      AddClaim(player, EMPATH);
       AddClaimEmpathInfo(player, claim.info().empath_info());
       break;
     case RoleAction::kFortunetellerAction:
-      AddClaim(player, FORTUNE_TELLER);
       AddClaimFortuneTellerAction(player, claim.info().fortuneteller_action());
       break;
     case RoleAction::kMonkAction:
-      AddClaim(player, MONK);
       AddClaimMonkAction(player, claim.info().monk_action());
       break;
     case RoleAction::kButlerAction:
-      AddClaim(player, BUTLER);
       AddClaimButlerAction(player, claim.info().butler_action());
       break;
     case RoleAction::kRavenkeeperAction:
-      AddClaim(player, RAVENKEEPER);
       AddClaimRavenkeeperAction(player, claim.info().ravenkeeper_action());
       break;
     case RoleAction::kUndertakerInfo:
-      AddClaim(player, UNDERTAKER);
       AddClaimUndertakerInfo(player, claim.info().undertaker_info());
       break;
     case RoleAction::kSlayerAction:
@@ -1333,11 +1352,9 @@ void GameState::AddClaim(const Claim& claim) {
           << "with no info instead";
       break;
     case RoleAction::kImpAction:
-      AddClaim(player, IMP);
       AddClaimImpAction(player, claim.info().imp_action());
       break;
     case RoleAction::kSpyInfo:
-      AddClaim(player, SPY);
       AddClaimSpyInfo(player, claim.info().spy_info());
       break;
     default:
@@ -1349,6 +1366,12 @@ void GameState::AddClaim(const Claim& claim) {
 void GameState::AddClaimWasherwomanInfo(
     const string& player, const string& ping1, const string& ping2,
     Role role) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  LearnRoleInfo* info_pb = claim_pb->mutable_info()->mutable_washerwoman_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   BeforeEvent(Event::kClaim);
   CHECK_EQ(ClaimedRole(player), WASHERWOMAN)  // because it's clearer, imo
       << player << " needs to claim WASHERWOMAN before claiming info";
@@ -1364,6 +1387,12 @@ void GameState::AddClaimWasherwomanInfo(
 void GameState::AddClaimLibrarianInfo(
     const string& player, const string& ping1, const string& ping2,
     Role role) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  LearnRoleInfo* info_pb = claim_pb->mutable_info()->mutable_librarian_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   BeforeEvent(Event::kClaim);
   CHECK_EQ(ClaimedRole(player), LIBRARIAN)  // because it's clearer, imo
       << player << " needs to claim LIBRARIAN before claiming info";
@@ -1379,6 +1408,13 @@ void GameState::AddClaimLibrarianInfo(
 void GameState::AddClaimInvestigatorInfo(
     const string& player, const string& ping1, const string& ping2, Role role) {
   BeforeEvent(Event::kClaim);
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  LearnRoleInfo* info_pb =
+      claim_pb->mutable_info()->mutable_investigator_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   CHECK_EQ(ClaimedRole(player), INVESTIGATOR)  // because it's clearer, imo
       << player << " needs to claim INVESTIGATOR before claiming info";
   CHECK(IsMinionRole(role));
@@ -1391,6 +1427,9 @@ void GameState::AddClaimInvestigatorInfo(
 }
 
 void GameState::AddClaimChefInfo(const string& player, int chef_info) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_chef_info(chef_info);
   BeforeEvent(Event::kClaim);
 }
 
@@ -1414,6 +1453,9 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
   // We don't check that empath_info is in [0,2], because in rare cases the
   // Storyteller technically could give a higher number to inform the Empath
   // that they are drunk or poisoned (if Good really needs help).
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_empath_info(empath_info);
   CHECK_GE(empath_info, 0) << "Expected non-negative Empath info";
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player);
@@ -1500,6 +1542,13 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
 
 void GameState::AddClaimFortuneTellerAction(
     const string& player, const string& pick1, const string& pick2, bool yes) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  FortuneTellerAction* action_pb =
+      claim_pb->mutable_info()->mutable_fortuneteller_action();
+  action_pb->set_pick1(pick1);
+  action_pb->set_pick2(pick2);
+  action_pb->set_yes(yes);
   CHECK_NE(pick1, pick2)
       << "Fortune Teller needs to pick two different players";
   BeforeEvent(Event::kClaim);
@@ -1542,6 +1591,9 @@ void GameState::AddClaimFortuneTellerAction(
 
 void GameState::AddClaimMonkAction(const string& player,
                                    const string& monk_action) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_monk_action(monk_action);
   CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player), target = PlayerIndex(monk_action);
@@ -1551,6 +1603,9 @@ void GameState::AddClaimMonkAction(const string& player,
 
 void GameState::AddClaimButlerAction(const string& player,
                                      const string& butler_action) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_butler_action(butler_action);
   CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player), target = PlayerIndex(butler_action);
@@ -1560,6 +1615,12 @@ void GameState::AddClaimButlerAction(const string& player,
 
 void GameState::AddClaimRavenkeeperAction(
     const string& player, const string& pick, Role role) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  RavenkeeperAction* action_pb =
+      claim_pb->mutable_info()->mutable_ravenkeeper_action();
+  action_pb->set_pick(pick);
+  action_pb->set_role(role);
   CHECK_NE(role, ROLE_UNSPECIFIED) << "Ravenkeeper needs to learn a valid role";
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player), target = PlayerIndex(pick);
@@ -1576,6 +1637,9 @@ void GameState::AddClaimRavenkeeperAction(const string& player,
 }
 
 void GameState::AddClaimUndertakerInfo(const string& player, Role info) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_undertaker_info(info);
   BeforeEvent(Event::kClaim);
   CHECK_EQ(ClaimedRole(player), UNDERTAKER)
       << player << " needs to claim UNDERTAKER before claiming info";
@@ -1590,16 +1654,23 @@ void GameState::AddClaimUndertakerInfo(const string& player, Role info) {
 
 // The open Spy play.
 void GameState::AddClaimSpyInfo(const string& player, const SpyInfo& spy_info) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  *(claim_pb->mutable_info()->mutable_spy_info()) = spy_info;
   BeforeEvent(Event::kClaim);
 }
 
-// Useless, but yay theoretically occur after Recluse starpass.
+// Useless, but may theoretically occur after Recluse starpass.
 void GameState::AddClaimImpAction(const string& player,
                                   const string& imp_action) {
+  Claim* claim_pb = log_.add_events()->mutable_claim();
+  claim_pb->set_player(player);
+  claim_pb->mutable_info()->set_imp_action(imp_action);
   BeforeEvent(Event::kClaim);
 }
 
 void GameState::AddVictory(Team victory) {
+  log_.add_events()->set_victory(victory);
   BeforeEvent(Event::kVictory);
   CHECK_NE(victory, TEAM_UNSPECIFIED) << "Victory needs to be GOOD or EVIL";
   CHECK_EQ(victory_, TEAM_UNSPECIFIED)
@@ -1624,6 +1695,9 @@ void GameState::AddAllShownTokens(absl::Span<const Role> roles) {
 }
 
 void GameState::AddShownToken(const string& player, Role role) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->set_shown_token(role);
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK_NE(role, ROLE_UNSPECIFIED) << "Need to specify a role";
   CHECK_NE(role, DRUNK) << "No one can be shown the DRUNK token";
@@ -1664,6 +1738,11 @@ Role GameState::ShownToken(const string& player) const {
 
 void GameState::AddMinionInfo(const string& player, const string& demon,
                               absl::Span<const string> minions) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  MinionInfo* info_pb = si_pb->mutable_minion_info();
+  info_pb->set_demon(demon);
+  info_pb->mutable_minions()->Assign(minions.begin(), minions.end());
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Minion info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
@@ -1701,6 +1780,11 @@ void GameState::AddMinionInfo(const string& player,
 void GameState::AddDemonInfo(const string& player,
                              absl::Span<const string> minions,
                              absl::Span<const Role> bluffs) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  DemonInfo* info_pb = si_pb->mutable_demon_info();
+  info_pb->mutable_minions()->Assign(minions.begin(), minions.end());
+  info_pb->mutable_bluffs()->Assign(bluffs.begin(), bluffs.end());
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK_GE(num_players_, 7) << "Demon info unavailable for < 7 players";
   CHECK(perspective_ == STORYTELLER || perspective_ == PLAYER)
@@ -1830,6 +1914,13 @@ void GameState::AddLearningRoleInfoConstraints(
 
 void GameState::AddWasherwomanInfo(const string& player, const string& ping1,
                                    const string& ping2, Role role) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  LearnRoleInfo* info_pb =
+      si_pb->mutable_role_action()->mutable_washerwoman_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   ValidateRoleAction(player, WASHERWOMAN);
   CHECK(IsTownsfolkRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1844,6 +1935,13 @@ void GameState::AddWasherwomanInfo(
 
 void GameState::AddLibrarianInfo(const string& player, const string& ping1,
                                  const string& ping2, Role role) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  LearnRoleInfo* info_pb =
+      si_pb->mutable_role_action()->mutable_librarian_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   ValidateRoleAction(player, LIBRARIAN);
   CHECK(IsOutsiderRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1858,6 +1956,13 @@ void GameState::AddLibrarianInfo(
 
 void GameState::AddInvestigatorInfo(const string& player, const string& ping1,
                                     const string& ping2, Role role) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  LearnRoleInfo* info_pb =
+      si_pb->mutable_role_action()->mutable_investigator_info();
+  info_pb->set_ping1(ping1);
+  info_pb->set_ping2(ping2);
+  info_pb->set_role(role);
   ValidateRoleAction(player, INVESTIGATOR);
   CHECK(IsMinionRole(role));
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1871,10 +1976,16 @@ void GameState::AddInvestigatorInfo(
 }
 
 void GameState::AddChefInfo(const string& player, int chef_info) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_chef_info(chef_info);
   BeforeEvent(Event::kStorytellerInteraction);
 }
 
 void GameState::AddEmpathInfo(const string& player, int empath_info) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_empath_info(empath_info);
   ValidateRoleAction(player, EMPATH);
   // We don't check that empath_info is in [0,2], because in rare cases the
   // Storyteller technically could give a higher number to inform the Empath
@@ -1887,6 +1998,13 @@ void GameState::AddEmpathInfo(const string& player, int empath_info) {
 
 void GameState::AddFortuneTellerAction(
     const string& player, const string& pick1, const string& pick2, bool yes) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  FortuneTellerAction* action_pb =
+      si_pb->mutable_role_action()->mutable_fortuneteller_action();
+  action_pb->set_pick1(pick1);
+  action_pb->set_pick2(pick2);
+  action_pb->set_yes(yes);
   ValidateRoleAction(player, FORTUNE_TELLER);
   CHECK_NE(pick1, pick2)
       << "Fortune Teller needs to pick two different players";
@@ -1900,6 +2018,9 @@ void GameState::AddFortuneTellerAction(
 }
 
 void GameState::AddMonkAction(const string& player, const string& monk_action) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_monk_action(monk_action);
   ValidateRoleAction(player, MONK);
   CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1912,6 +2033,9 @@ void GameState::AddMonkAction(const string& player, const string& monk_action) {
 
 void GameState::AddButlerAction(const string& player,
                                 const string& butler_action) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_butler_action(butler_action);
   ValidateRoleAction(player, BUTLER);
   CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1924,6 +2048,12 @@ void GameState::AddButlerAction(const string& player,
 
 void GameState::AddRavenkeeperAction(const string& player, const string& pick,
                                    Role role) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  RavenkeeperAction* action_pb =
+      si_pb->mutable_role_action()->mutable_ravenkeeper_action();
+  action_pb->set_pick(pick);
+  action_pb->set_role(role);
   ValidateRoleAction(player, RAVENKEEPER);
   CHECK_NE(role, ROLE_UNSPECIFIED) << "Ravenkeeper needs to learn a valid role";
   BeforeEvent(Event::kStorytellerInteraction);
@@ -1936,6 +2066,9 @@ void GameState::AddRavenkeeperAction(
 }
 
 void GameState::AddUndertakerInfo(const string& player, Role info) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_undertaker_info(info);
   BeforeEvent(Event::kStorytellerInteraction);
   ValidateRoleAction(player, UNDERTAKER);
   CHECK_NE(execution_death_, kNoPlayer);  // Otherwise noone to exhume.
@@ -1949,6 +2082,9 @@ void GameState::AddUndertakerInfo(const string& player, Role info) {
 
 void GameState::AddSlayerAction(const string& player,
                                 const string& slayer_action) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_slayer_action(slayer_action);
   BeforeEvent(Event::kStorytellerInteraction);
   CHECK(cur_time_.IsDay) << "Slayer only allowed to shoot during the day";
   const int slayer = PlayerIndex(player);
@@ -1988,6 +2124,9 @@ void GameState::ValidateRoleAction(const string& player, Role role) {
 
 void GameState::AddPoisonerAction(const string& player,
                                   const string& poisoner_action) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_poisoner_action(poisoner_action);
   ValidateRoleAction(player, POISONER);
   BeforeEvent(Event::kStorytellerInteraction);
   const int target = PlayerIndex(poisoner_action);
@@ -1998,6 +2137,9 @@ void GameState::AddPoisonerAction(const string& player,
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  si_pb->mutable_role_action()->set_imp_action(imp_action);
   ValidateRoleAction(player, IMP);
   BeforeEvent(Event::kStorytellerInteraction);
   const int target = PlayerIndex(imp_action);
@@ -2009,6 +2151,9 @@ void GameState::AddImpAction(const string& player, const string& imp_action) {
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
+  auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
+  si_pb->set_player(player);
+  *(si_pb->mutable_role_action()->mutable_spy_info()) = spy_info;
   BeforeEvent(Event::kStorytellerInteraction);
 }
 
@@ -2339,13 +2484,27 @@ SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles) {
 }
 
 void GameState::WriteSatSolutionToFile(const CpSolverResponse response,
-                                      CpModelBuilder* model,
+                                       CpModelBuilder* model,
                                        const string& filename) const {
   ofstream f;
   f.open(filename);
     for (int i = 0; i < response.solution_size(); ++i) {
       operations_research::sat::IntVar v = model->GetIntVarFromProtoIndex(i);
       f << v.Name() << ": " << SolutionIntegerValue(response, v) << "\n";
+    }
+  f.close();
+}
+
+void GameState::WriteModelToFile(const string& filename) const {
+  WriteProtoToFile(filename, model_.Build());
+}
+
+void GameState::WriteModelVariablesToFile(const string& filename) const {
+  const auto& model_pb = model_.Build();
+  ofstream f;
+  f.open(filename);
+    for (int i = 0; i < model_pb.variables_size(); ++i) {
+      f << i << ": " << VarDebugString(model_pb, i) << "\n";
     }
   f.close();
 }

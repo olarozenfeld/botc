@@ -11,15 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <fcntl.h>
-#include <fstream>
-#include <iostream>
-
-#include "src/game.h"
+#include <string>
 
 #include "absl/flags/flag.h"
-#include "google/protobuf/io/zero_copy_stream_impl.h"
-#include "google/protobuf/text_format.h"
+#include "src/game.h"
+#include "src/util.h"
 
 using std::string;
 
@@ -32,44 +28,11 @@ ABSL_FLAG(string, output_model_vars, "",
 ABSL_FLAG(string, output_solution, "", "Optional solution output file.");
 
 namespace botc {
-using google::protobuf::io::FileInputStream;
-using google::protobuf::io::FileOutputStream;
-using google::protobuf::Message;
-using google::protobuf::TextFormat;
-using std::ofstream;
-
-void ReadProtoFromFile(const string& filename, Message* msg) {
-  int fi = open(filename.c_str(), O_RDONLY);
-  CHECK_NE(fi, -1) << "File not found: " << filename;
-  FileInputStream fstream(fi);
-  TextFormat::Parse(&fstream, msg);
-  close(fi);
-}
-
-void WriteProtoToFile(const string& filename, const Message& msg) {
-  int fd = open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  CHECK_NE(fd, -1) << "File not found: " << filename;
-  FileOutputStream* output = new FileOutputStream(fd);
-  TextFormat::Print(msg, output);
-  output->Flush();
-  close(fd);
-}
-
-GameState SampleGame() {
-  GameState g = GameState::FromStorytellerPerspective(
-      {"P1", "P2", "P3", "P4", "P5", "P6"},
-      {{"P1", DRUNK}, {"P2", SLAYER}, {"P3", MONK}, {"P4", SCARLET_WOMAN},
-       {"P5", EMPATH}, {"P6", IMP}},
-      "");
-  return g;
-}
 
 void Run() {
   string game_log = absl::GetFlag(FLAGS_game_log);
   CHECK(!game_log.empty()) << "--game_log should be a valid path";
-  GameLog log;
-  ReadProtoFromFile(game_log, &log);
-  GameState g = GameState::FromProto(log);
+  GameState g = GameState::ReadFromFile(game_log);
 
   SolverRequest request;  // If file present, read from file.
   string solver_parameters = absl::GetFlag(FLAGS_solver_parameters);
@@ -78,18 +41,12 @@ void Run() {
   }
 
   string output_model = absl::GetFlag(FLAGS_output_model);
-  const auto& model_pb = g.SatModel().Build();
   if (!output_model.empty()) {
-    WriteProtoToFile(output_model, model_pb);
+    g.WriteModelToFile(output_model);
   }
   string output_model_vars = absl::GetFlag(FLAGS_output_model_vars);
   if (!output_model_vars.empty()) {
-    ofstream f;
-    f.open(output_model_vars);
-      for (int i = 0; i < model_pb.variables_size(); ++i) {
-        f << i << ": " << VarDebugString(model_pb, i) << "\n";
-      }
-    f.close();
+    g.WriteModelVariablesToFile(output_model_vars);
   }
 
   SolverResponse solution = g.SolveGame(request);
