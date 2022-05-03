@@ -248,9 +248,9 @@ class GameState {
   void InitMonkVars();
   void InitButlerVars();
   void InitRedHerring(const string& name);
-  int PlayerIndex(const string& name) const;
   void BeforeEvent(Event::DetailsCase event_type);
   void ValidateRoleAction(const string& player, Role role);
+  void ValidateClaimRoleAction(const string& player, Role role);
   void AddVirginProcConstraints(bool proc);
   void AddBaronConstraints();
   void AddScarletWomanConstraints();
@@ -261,14 +261,16 @@ class GameState {
   void AddGameNotOverConstraints();
   void AddGoodWonConstraints();
   void AddEvilWonConstraints();
-  void AddLearningRoleInfoConstraints(
-    const string& player, Role player_role, const string& ping1,
-    const string& ping2, Role role);
+  void AddLearningRoleInfoConstraints(const string& player, Role player_role,
+                                      const string& ping1, const string& ping2,
+                                      Role role);
+  void AddLearningRoleInfoConstraints(int player, Role player_role, int ping,
+                                      Role role);
 
   // Syntactic-sugar-type helper functions.
   vector<BoolVar> CollectRolesForPlayer(
-    const vector<vector<BoolVar>>& from, int player,
-    absl::Span<const Role> roles, bool only_alive) const;
+      const vector<vector<BoolVar>>& from, int player,
+      absl::Span<const Role> roles, bool only_alive) const;
   vector<BoolVar> CollectRoles(const vector<vector<BoolVar>>& from,
                                absl::Span<const Role> roles,
                                bool only_alive) const;
@@ -314,6 +316,7 @@ class GameState {
   void WriteSatSolutionToFile(const CpSolverResponse response,
                               CpModelBuilder* model,
                               const string& filename) const;
+  int PlayerIndex(const string& name) const;
   vector<int> AliveNeighbors(int player) const;
   vector<int> AlivePlayersClaiming(Role role) const;
 

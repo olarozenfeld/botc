@@ -444,6 +444,59 @@ TEST(Undertaker, HealthyVirginProcDrunkUndertaker) {
   EXPECT_WORLDS_EQ(g.SolveGame(), expected_worlds);
 }
 
+TEST(Undertaker, SpyFalseRegisters) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", UNDERTAKER);
+  g.AddDay(1);
+  g.AddAllClaims({UNDERTAKER, MAYOR, VIRGIN, SLAYER, INVESTIGATOR}, "P1");
+  g.AddClaimInvestigatorInfo("P5", "P1", "P2", POISONER);
+  g.AddNomination("P5", "P3");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddUndertakerInfo("P1", INVESTIGATOR);
+  g.AddDay(2);
+  g.AddClaimUndertakerInfo("P1", INVESTIGATOR);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", SPY}})).worlds_size(), 1);
+  EXPECT_EQ(
+      g.ValidWorld(FromCurrentRoles({{"P5", INVESTIGATOR}})).worlds_size(), 1);
+  SolverRequest request = FromNotInPlayRoles({SPY});
+  auto *pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(INVESTIGATOR);
+  pr->set_is_not(true);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+}
+
+TEST(Undertaker, RecluseFalseRegisters) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", UNDERTAKER);
+  g.AddDay(1);
+  g.AddAllClaims({UNDERTAKER, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
+  g.AddNomination("P2", "P5");
+  g.AddVote({"P1", "P2", "P3"}, "P5");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddUndertakerInfo("P1", IMP);
+  g.AddDay(2);
+  g.AddClaimUndertakerInfo("P1", IMP);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", RECLUSE}})).worlds_size(), 1);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", IMP}})).worlds_size(), 1);
+  SolverRequest request;
+  auto *pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(IMP);
+  pr->set_is_not(true);
+  pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(RECLUSE);
+  pr->set_is_not(true);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+}
+
 TEST(Undertaker, HealthyUndertakerUseless) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
@@ -609,6 +662,61 @@ TEST(NightDeaths, MayorBounce) {
   g.AddDay(2);
   g.AddDeath("P5");
   EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+}
+
+TEST(Ravenkeeper, SpyFalseRegisters) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", RAVENKEEPER);
+  g.AddDay(1);
+  g.AddAllClaims({RAVENKEEPER, MAYOR, VIRGIN, SLAYER, INVESTIGATOR}, "P1");
+  g.AddClaimInvestigatorInfo("P5", "P1", "P2", POISONER);
+  g.AddNomination("P5", "P3");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddRavenkeeperAction("P1", "P5", INVESTIGATOR);
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddClaimRavenkeeperAction("P1", "P5", INVESTIGATOR);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", SPY}})).worlds_size(), 1);
+  EXPECT_EQ(
+      g.ValidWorld(FromCurrentRoles({{"P5", INVESTIGATOR}})).worlds_size(), 1);
+  SolverRequest request = FromNotInPlayRoles({SPY});
+  auto *pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(INVESTIGATOR);
+  pr->set_is_not(true);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+}
+
+TEST(Ravenkeeper, RecluseFalseRegisters) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", RAVENKEEPER);
+  g.AddDay(1);
+  g.AddAllClaims({RAVENKEEPER, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
+  g.AddNomination("P5", "P5");
+  g.AddVote({"P1", "P2", "P3"}, "P5");
+  g.AddExecution("P5");
+  g.AddDeath("P5");
+  g.AddNight(2);
+  g.AddRavenkeeperAction("P1", "P5", IMP);
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddClaimRavenkeeperAction("P1", "P5", IMP);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", RECLUSE}})).worlds_size(), 1);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P5", IMP}})).worlds_size(), 1);
+  SolverRequest request;
+  auto *pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(IMP);
+  pr->set_is_not(true);
+  pr = request.mutable_current_assumptions()->add_roles();
+  pr->set_player("P5");
+  pr->set_role(RECLUSE);
+  pr->set_is_not(true);
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
 }
 
 TEST(Ravenkeeper, LearnsTrueRole) {
@@ -855,8 +963,7 @@ TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
   g.AddExecution("P3");
   g.AddDeath("P3");
   g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
-  SolverResponse r = g.ValidWorld(FromCurrentRoles({{"P3", IMP}}));
-  EXPECT_EQ(r.worlds_size(), 0);
+  EXPECT_EQ(g.ValidWorld(FromCurrentRoles({{"P3", IMP}})).worlds_size(), 0);
 }
 
 TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {

@@ -99,6 +99,10 @@ bool IsGoodRole(Role role) {
   return IsRoleInRoles(role, kGoodRoles);
 }
 
+bool IsEvilRole(Role role) {
+  return IsRoleInRoles(role, kEvilRoles);
+}
+
 bool IsFirstNightRole(Role role) {
   return IsRoleInRoles(role, kFirstNightRoles);
 }
@@ -1221,10 +1225,11 @@ void GameState::AddDeath(const string& name) {
           RECLUSE, cur_time_.Count, true);
       BoolVar healthy_recluse = CreateEquivalentVarAnd(
         {day_roles_.back()[target][RECLUSE], Not(poisoned_recluse)},
-        absl::StrFormat("%s_healthy_recluse", players_[target]));
+        absl::StrFormat("healthy_recluse_%s_%s", players_[target], time));
       BoolVar target_proc = CreateEquivalentVarSum(
           {healthy_recluse, imp},
-          absl::StrFormat("%s_healthy_recluse_or_imp", players_[target]));
+          absl::StrFormat("healthy_recluse_or_imp_%s_%s", players_[target],
+                          time));
       AddAnd({is_slayer, target_proc, Not(poisoned)});
     } else {
       AddAnd({is_slayer, imp, Not(poisoned)});
@@ -1295,6 +1300,16 @@ void GameState::AddClaim(const string& player, Role role) {
   const int p_index = PlayerIndex(player);
   claim_of_player_[p_index] = role;
   players_claiming_[role].push_back(p_index);
+  const bool current_perspective = (perspective_ == PLAYER &&
+                                    p_index == perspective_player_);
+  if (perspective_ == STORYTELLER || current_perspective) {
+    // Validate open strategy:
+    Role actual = (current_perspective ?
+        perspective_player_shown_token_ : st_shown_tokens_[p_index]);
+    CHECK(actual == role || IsEvilRole(actual))
+        << absl::StrFormat("%s claims %s, yet they were actually shown %s",
+                           player, Role_Name(role), Role_Name(actual));
+  }
   if (role == IMP) {
     // Recluse starpass exception. Someone claiming Imp is either currently
     // the Good Imp, or some sort of starting Evil.
@@ -1372,11 +1387,11 @@ void GameState::AddClaimWasherwomanInfo(
   info_pb->set_ping1(ping1);
   info_pb->set_ping2(ping2);
   info_pb->set_role(role);
+  ValidateClaimRoleAction(player, WASHERWOMAN);
   BeforeEvent(Event::kClaim);
-  CHECK_EQ(ClaimedRole(player), WASHERWOMAN)  // because it's clearer, imo
-      << player << " needs to claim WASHERWOMAN before claiming info";
   CHECK(IsTownsfolkRole(role));
   AddLearningRoleInfoConstraints(player, WASHERWOMAN, ping1, ping2, role);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimWasherwomanInfo(
@@ -1393,11 +1408,11 @@ void GameState::AddClaimLibrarianInfo(
   info_pb->set_ping1(ping1);
   info_pb->set_ping2(ping2);
   info_pb->set_role(role);
+  ValidateClaimRoleAction(player, LIBRARIAN);
   BeforeEvent(Event::kClaim);
-  CHECK_EQ(ClaimedRole(player), LIBRARIAN)  // because it's clearer, imo
-      << player << " needs to claim LIBRARIAN before claiming info";
   CHECK(IsOutsiderRole(role));
   AddLearningRoleInfoConstraints(player, LIBRARIAN, ping1, ping2, role);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimLibrarianInfo(
@@ -1407,7 +1422,6 @@ void GameState::AddClaimLibrarianInfo(
 
 void GameState::AddClaimInvestigatorInfo(
     const string& player, const string& ping1, const string& ping2, Role role) {
-  BeforeEvent(Event::kClaim);
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   LearnRoleInfo* info_pb =
@@ -1415,10 +1429,11 @@ void GameState::AddClaimInvestigatorInfo(
   info_pb->set_ping1(ping1);
   info_pb->set_ping2(ping2);
   info_pb->set_role(role);
-  CHECK_EQ(ClaimedRole(player), INVESTIGATOR)  // because it's clearer, imo
-      << player << " needs to claim INVESTIGATOR before claiming info";
+  ValidateClaimRoleAction(player, INVESTIGATOR);
+  BeforeEvent(Event::kClaim);
   CHECK(IsMinionRole(role));
   AddLearningRoleInfoConstraints(player, INVESTIGATOR, ping1, ping2, role);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimInvestigatorInfo(
@@ -1430,7 +1445,15 @@ void GameState::AddClaimChefInfo(const string& player, int chef_info) {
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_chef_info(chef_info);
+  ValidateClaimRoleAction(player, CHEF);
+  CHECK_GE(chef_info, 0) << "Expected Chef number >=0, got " << chef_info;
+  bool possible_recluse = AlivePlayersClaiming(RECLUSE).size() > 0;
+  const int max_chef_number = num_minions_ + possible_recluse;
+  CHECK_LE(chef_info, max_chef_number)
+      << absl::StrFormat("Expected Chef number <=%d, got %d", max_chef_number,
+                         chef_info);
   BeforeEvent(Event::kClaim);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 vector<int> GameState::AliveNeighbors(int player) const {
@@ -1456,6 +1479,7 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_empath_info(empath_info);
+  ValidateClaimRoleAction(player, EMPATH);
   CHECK_GE(empath_info, 0) << "Expected non-negative Empath info";
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player);
@@ -1549,6 +1573,7 @@ void GameState::AddClaimFortuneTellerAction(
   action_pb->set_pick1(pick1);
   action_pb->set_pick2(pick2);
   action_pb->set_yes(yes);
+  ValidateClaimRoleAction(player, FORTUNE_TELLER);
   CHECK_NE(pick1, pick2)
       << "Fortune Teller needs to pick two different players";
   BeforeEvent(Event::kClaim);
@@ -1594,11 +1619,12 @@ void GameState::AddClaimMonkAction(const string& player,
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_monk_action(monk_action);
+  ValidateClaimRoleAction(player, MONK);
   CHECK_NE(player, monk_action) << "Monk cannot pick themselves";
   BeforeEvent(Event::kClaim);
-  const int i = PlayerIndex(player), target = PlayerIndex(monk_action);
-  AddImplication(night_roles_.back()[i][MONK], monk_pick_.back()[target]);
-  deferred_constraints_[i] = false;
+  AddImplication(night_roles_.back()[PlayerIndex(player)][MONK],
+                 monk_pick_.back()[PlayerIndex(monk_action)]);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimButlerAction(const string& player,
@@ -1606,11 +1632,12 @@ void GameState::AddClaimButlerAction(const string& player,
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_butler_action(butler_action);
+  ValidateClaimRoleAction(player, BUTLER);
   CHECK_NE(player, butler_action) << "Butler cannot pick themselves";
   BeforeEvent(Event::kClaim);
-  const int i = PlayerIndex(player), target = PlayerIndex(butler_action);
-  AddImplication(night_roles_.back()[i][BUTLER], butler_pick_.back()[target]);
-  deferred_constraints_[i] = false;
+  AddImplication(night_roles_.back()[PlayerIndex(player)][BUTLER],
+                 butler_pick_.back()[PlayerIndex(butler_action)]);
+  deferred_constraints_[PlayerIndex(player)] = false;
 }
 
 void GameState::AddClaimRavenkeeperAction(
@@ -1621,13 +1648,13 @@ void GameState::AddClaimRavenkeeperAction(
       claim_pb->mutable_info()->mutable_ravenkeeper_action();
   action_pb->set_pick(pick);
   action_pb->set_role(role);
+  ValidateClaimRoleAction(player, RAVENKEEPER);
+  const int i = PlayerIndex(player);
   CHECK_NE(role, ROLE_UNSPECIFIED) << "Ravenkeeper needs to learn a valid role";
-  BeforeEvent(Event::kClaim);
-  const int i = PlayerIndex(player), target = PlayerIndex(pick);
   CHECK_EQ(i, night_death_)
       << player << " didn't die at night, Ravenkeeper wouldn't trigger.";
-  AddOr({Not(night_roles_.back()[i][RAVENKEEPER]), poisoner_pick_.back()[i],
-         night_roles_.back()[target][role]});
+  BeforeEvent(Event::kClaim);
+  AddLearningRoleInfoConstraints(i, RAVENKEEPER, PlayerIndex(pick), role);
   deferred_constraints_[i] = false;
 }
 
@@ -1640,16 +1667,13 @@ void GameState::AddClaimUndertakerInfo(const string& player, Role info) {
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_undertaker_info(info);
+  ValidateClaimRoleAction(player, UNDERTAKER);
   BeforeEvent(Event::kClaim);
-  CHECK_EQ(ClaimedRole(player), UNDERTAKER)
-      << player << " needs to claim UNDERTAKER before claiming info";
   CHECK_NE(prev_execution_, kNoPlayer);  // Otherwise noone to exhume.
   CHECK_NE(info, ROLE_UNSPECIFIED) << "Expected valid Undertaker info";
   const int i = PlayerIndex(player);
-  BoolVar poisoned = CreatePoisonedRoleVar(
-      UNDERTAKER, cur_time_.Count - 1, true);
-  const BoolVar& correct = night_roles_.back()[prev_execution_][info];
-  AddImplicationOr(night_roles_[0][i][UNDERTAKER], {poisoned, correct});
+  AddLearningRoleInfoConstraints(i, UNDERTAKER, prev_execution_, info);
+  deferred_constraints_[i] = false;
 }
 
 // The open Spy play.
@@ -1657,6 +1681,7 @@ void GameState::AddClaimSpyInfo(const string& player, const SpyInfo& spy_info) {
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   *(claim_pb->mutable_info()->mutable_spy_info()) = spy_info;
+  ValidateClaimRoleAction(player, SPY);
   BeforeEvent(Event::kClaim);
 }
 
@@ -1666,6 +1691,7 @@ void GameState::AddClaimImpAction(const string& player,
   Claim* claim_pb = log_.add_events()->mutable_claim();
   claim_pb->set_player(player);
   claim_pb->mutable_info()->set_imp_action(imp_action);
+  ValidateClaimRoleAction(player, IMP);
   BeforeEvent(Event::kClaim);
 }
 
@@ -1878,14 +1904,41 @@ void GameState::AddRoleAction(const string& player,
 }
 
 void GameState::AddLearningRoleInfoConstraints(
+    int player, Role player_role, int ping, Role role) {
+  const string player_name = players_[player];
+  const string role_name = Role_Name(player_role);
+  CHECK(IsRoleInRoles(player_role, {UNDERTAKER, RAVENKEEPER}))
+      << absl::StrFormat("Currently supported roles are top UNDERTAKER, "
+                         "RAVENKEEPER, got %s for %s", role_name, player_name);
+  // If player is player_role and is not poisoned, then ping is either role or
+  // a not poisoned Spy/Recluse
+  const Role false_trigger = IsGoodRole(role) ? SPY : RECLUSE;
+  const BoolVar& is_player_role = night_roles_[0][player][player_role];
+  const BoolVar& ping_role = day_roles_.back()[ping][role];
+  const BoolVar& ping_false = day_roles_.back()[ping][false_trigger];
+  const BoolVar& player_poisoned = CreatePoisonedRoleVar(
+      player_role, cur_time_.Count, false);
+  const BoolVar& ping_poisoned = CreatePoisonedRoleVar(
+      false_trigger, cur_time_.Count, false);
+  BoolVar ping_healthy_false = CreateEquivalentVarAnd(
+      {ping_false, Not(ping_poisoned)},
+      absl::StrFormat("%s_ping_%s_healthy_%s", role_name,
+                      players_[ping], Role_Name(false_trigger)));
+  AddOr({Not(is_player_role), player_poisoned, ping_role, ping_healthy_false});
+}
+
+void GameState::AddLearningRoleInfoConstraints(
     const string& player_name, Role player_role, const string& ping1_name,
     const string& ping2_name, Role role) {
+  const string role_name = Role_Name(player_role);
+  CHECK(IsRoleInRoles(player_role, {WASHERWOMAN, LIBRARIAN, INVESTIGATOR}))
+      << absl::StrFormat("Currently supported roles are top 3, got %s for %s",
+                         role_name, player_name);
   const int player = PlayerIndex(player_name);
   const int ping1 = PlayerIndex(ping1_name);
   const int ping2 = PlayerIndex(ping2_name);
   CHECK_NE(ping1, ping2)
       << Role_Name(player_role) << " pings need to be different.";
-  const string role_name = Role_Name(player_role);
   // If player is player_role ^ is not poisoned, then either:
   // * ping1 is either role or not poisoned Spy/Recluse
   // * ping2 is either role or not poisoned Spy/Recluse
@@ -1909,7 +1962,6 @@ void GameState::AddLearningRoleInfoConstraints(
                       ping1_name, Role_Name(false_trigger)));
   AddOr({Not(is_player_role), player_poisoned, ping1_role,
          ping2_role, ping1_healthy_false, ping2_healthy_false});
-  deferred_constraints_[player] = false;
 }
 
 void GameState::AddWasherwomanInfo(const string& player, const string& ping1,
@@ -1979,7 +2031,15 @@ void GameState::AddChefInfo(const string& player, int chef_info) {
   auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
   si_pb->set_player(player);
   si_pb->mutable_role_action()->set_chef_info(chef_info);
+  ValidateRoleAction(player, CHEF);
+  CHECK_GE(chef_info, 0) << "Expected Chef number >=0, got " << chef_info;
+  const int max_chef_number = num_minions_ + 1;  // Possible Recluse
+  CHECK_LE(chef_info, max_chef_number)
+      << absl::StrFormat("Expected Chef number <=%d, got %d", max_chef_number,
+                         chef_info);
   BeforeEvent(Event::kStorytellerInteraction);
+  // We defer compiling the info until public claim.
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddEmpathInfo(const string& player, int empath_info) {
@@ -2043,7 +2103,7 @@ void GameState::AddButlerAction(const string& player,
   if (perspective_ == STORYTELLER && st_player_roles_[i] == BUTLER) {
     st_butler_pick_ = target;
   }
-  AddImplication(night_roles_.back()[i][BUTLER], butler_pick_.back()[target]);
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddRavenkeeperAction(const string& player, const string& pick,
@@ -2073,11 +2133,7 @@ void GameState::AddUndertakerInfo(const string& player, Role info) {
   ValidateRoleAction(player, UNDERTAKER);
   CHECK_NE(execution_death_, kNoPlayer);  // Otherwise noone to exhume.
   CHECK_NE(info, ROLE_UNSPECIFIED) << "Expected valid Undertaker info";
-  const int i = PlayerIndex(player);
-  BoolVar poisoned = CreatePoisonedRoleVar(
-      UNDERTAKER, cur_time_.Count - 1, true);
-  const BoolVar& correct = night_roles_.back()[execution_death_][info];
-  AddImplicationOr(night_roles_[0][i][UNDERTAKER], {poisoned, correct});
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddSlayerAction(const string& player,
@@ -2092,8 +2148,7 @@ void GameState::AddSlayerAction(const string& player,
   CHECK(!player_used_slayer_shot_[slayer])
       << player << " already used a Slayer shot";
   player_used_slayer_shot_[slayer] = true;
-  slayer_shots_.push_back(
-      {.Slayer = slayer, .Target = target});
+  slayer_shots_.push_back({.Slayer = slayer, .Target = target});
   next_event_maybe_death_ = true;
 }
 
@@ -2120,6 +2175,21 @@ void GameState::ValidateRoleAction(const string& player, Role role) {
   }
   CHECK(!night_action_used_[player_index]) << player << " already used ability";
   night_action_used_[player_index] = true;
+}
+
+void GameState::ValidateClaimRoleAction(const string& player, Role role) {
+  const string role_name = Role_Name(role);
+  const int player_index = PlayerIndex(player);
+  CHECK_EQ(claim_of_player_[player_index], role)
+      << absl::StrFormat("%s needs to claim %s role before claiming info",
+                         player, role_name);
+  CHECK(cur_time_.IsDay)
+      << absl::StrFormat("Role info claims only occur during the day, got %s "
+                         "claiming %s info", player, role_name);
+  CHECK(is_alive_[player_index] || night_death_ == player_index)
+      << absl::StrFormat("To claim %s info, %s needs to be either alive or to "
+                         "have died night %d", role_name, player,
+                         cur_time_.Count);
 }
 
 void GameState::AddPoisonerAction(const string& player,
@@ -2173,10 +2243,12 @@ void GameState::AddVirginProcConstraints(bool proc) {
         << "Virgin " << players_[nomination.Nominee]
         << " needs to be alive to proc.";
   }
+  const string time = cur_time_.ToString();
   const BoolVar& virgin = day_roles_.back()[nomination.Nominee][VIRGIN];
   BoolVar poisoned = CreatePoisonedRoleVar(VIRGIN, cur_time_.Count, true);
   BoolVar proc_townsfolk = model_.NewBoolVar().WithName(
-      absl::StrFormat("%s_is_townsfolk", players_[nomination.Nominator]));
+      absl::StrFormat("%s_is_townsfolk_%s", players_[nomination.Nominator],
+                      time));
   vector<BoolVar> townsfolk_cases = CollectRolesForPlayer(
       day_roles_.back(), nomination.Nominator, kTownsfolkRoles, true);
 
@@ -2187,12 +2259,11 @@ void GameState::AddVirginProcConstraints(bool proc) {
   }
   // In case of a proc, we need to add the non-poisoned Spy option to the
   // townsfolk cases:
-  const BoolVar& spy = day_roles_.back()[nomination.Nominator][SPY];
-  BoolVar poisoned_spy = CreatePoisonedRoleVar(SPY, cur_time_.Count, true);
-  BoolVar healthy_spy = CreateEquivalentVarAnd(
-      {spy, Not(poisoned_spy)},
-      absl::StrFormat("%s_is_healthy_spy", players_[nomination.Nominator]));
-  townsfolk_cases.push_back(healthy_spy);
+  townsfolk_cases.push_back(CreateEquivalentVarAnd(
+      {day_roles_.back()[nomination.Nominator][SPY],
+       Not(CreatePoisonedRoleVar(SPY, cur_time_.Count, true))},
+      absl::StrFormat("healthy_spy_%s_%s", players_[nomination.Nominator],
+                      time)));
   AddEquivalenceSum(proc_townsfolk, townsfolk_cases);
   AddAnd({virgin, Not(poisoned), proc_townsfolk});
 }
