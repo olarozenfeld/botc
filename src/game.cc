@@ -354,6 +354,19 @@ void GameState::AddEquivalenceSum(const BoolVar& var,
   model_.AddEquality(LinearExpr::Sum(literals), var).WithName(name);
 }
 
+void GameState::AddEquivalenceSumEq(const BoolVar& var,
+                                    absl::Span<const BoolVar> literals,
+                                    int sum) {
+  const string sum_name = ConstraintName("+", literals);
+  model_.AddEquality(LinearExpr::Sum(literals), sum)
+        .OnlyEnforceIf(var)
+        .WithName(absl::StrFormat("%s -> %d = %s", var.Name(), sum, sum_name));
+  model_.AddNotEqual(LinearExpr::Sum(literals), sum)
+        .OnlyEnforceIf(Not(var))
+        .WithName(absl::StrFormat("%s -> %d != %s", Not(var).Name(), sum,
+                                  sum_name));
+}
+
 void GameState::AddEqualitySum(absl::Span<const BoolVar> literals, int sum) {
   const string name = absl::StrFormat(
       "%d = %s", sum, ConstraintName("+", literals));
@@ -413,6 +426,23 @@ BoolVar GameState::CreateEquivalentVarSum(
   return var;
 }
 
+BoolVar GameState::CreateEquivalentVarSumEq(
+    absl::Span<const BoolVar> literals, int sum, const string& name) {
+  if (literals.size() == 0) {
+    return model_.FalseVar();
+  }
+  const string key = absl::StrFormat(
+      "%d=%s", sum, ConstraintName("+", literals));
+  const auto it = var_cache_.find(key);
+  if (it != var_cache_.end()) {
+    return it->second;
+  }
+  BoolVar var = model_.NewBoolVar().WithName(name);
+  AddEquivalenceSumEq(var, literals, sum);
+  var_cache_[key] = var;
+  return var;
+}
+
 void GameState::InitRedHerring(const string& name) {
   bool have_fortune_teller = false;
   for (Role role : st_player_roles_) {
@@ -446,13 +476,13 @@ void GameState::InitRedHerring(const string& name) {
 void GameState::InitVarRolesInPlay() {
   roles_in_play_.push_back(model_.FalseVar());  // dummy variable
   for (Role role : kAllRoles) {
-    string name = absl::StrFormat("in_play_%s", Role_Name(role));
-    BoolVar var = model_.NewBoolVar().WithName(name);
-    vector<BoolVar> player_is_role(num_players_);
+    vector<BoolVar> player_is_role;
     for (int i = 0; i < num_players_; ++i) {
-      player_is_role[i] = night_roles_[0][i][role];
+      player_is_role.push_back(night_roles_[0][i][role]);
     }
-    roles_in_play_.push_back(var);
+    BoolVar v = CreateEquivalentVarSum(
+        player_is_role, absl::StrFormat("in_play_%s", Role_Name(role)));
+    roles_in_play_.push_back(v);
     // If roles are known, var can be fixed:
     if (perspective_ == STORYTELLER) {
       bool have_role = false;
@@ -462,9 +492,8 @@ void GameState::InitVarRolesInPlay() {
           break;
         }
       }
-      model_.FixVariable(var, have_role);
+      model_.FixVariable(v, have_role);
     }
-    AddEquivalenceSum(var, player_is_role);
   }
 }
 
@@ -488,8 +517,8 @@ void GameState::InitNightRoleVars() {
   InitPoisonerVars();
   InitButlerVars();  // TODO(olaola): optimize so these are created on demand.
   if (cur_time_.Count == 0) {
-    InitShownTokenVars();
     InitVarRolesInPlay();
+    InitShownTokenVars();
     InitIsEvilVars();
     // Appropriate numbers of outsiders, townsfolk and minions:
     vector<BoolVar> minions = CollectRoles(night_roles, kMinionRoles);
@@ -590,6 +619,9 @@ void GameState::InitShownTokenVars() {
     for (Role role : kTownsfolkRoles) {
       AddImplicationOr(shown_token_[i][role],
                        {assigned_roles[i][role], assigned_roles[i][DRUNK]});
+      // Importantly, if you're the Drunk, you cannot be shown an in-play token:
+      AddOr({Not(assigned_roles[i][DRUNK]), Not(shown_token_[i][role]),
+             Not(roles_in_play_[role])});
     }
     // Being shown any other role means you are that role.
     for (Role role : kNonTownsfolkRoles) {
@@ -1453,7 +1485,42 @@ void GameState::AddClaimChefInfo(const string& player, int chef_info) {
       << absl::StrFormat("Expected Chef number <=%d, got %d", max_chef_number,
                          chef_info);
   BeforeEvent(Event::kClaim);
-  deferred_constraints_[PlayerIndex(player)] = false;
+  const int chef = PlayerIndex(player);
+  const string time = cur_time_.ToString();
+  vector<BoolVar> registered_evil;  // How everyone registered to the Chef.
+  for (int i = 0; i < num_players_; ++i) {
+    BoolVar reg_evil_i = (i == chef ? model_.FalseVar() :  // Chef is good
+        model_.NewBoolVar().WithName(absl::StrFormat(
+            "chef_%s_registered_evil_%s", player, players_[i])));
+    registered_evil.push_back(reg_evil_i);
+    if (i != chef) {
+      vector<BoolVar> evil_options_i({is_evil_[i]});
+      if (claim_of_player_[i] == RECLUSE) {
+        evil_options_i.push_back(
+            CreateEquivalentVarAnd(
+                {night_roles_[0][i][RECLUSE], Not(poisoner_pick_[0][i])},
+                absl::StrFormat("healthy_recluse_%s_%s", players_[i], time)));
+      }
+      AddImplicationOr(reg_evil_i, evil_options_i);
+      BoolVar healthy_spy_i = CreateEquivalentVarAnd(
+          {night_roles_[0][i][SPY], Not(poisoner_pick_[0][i])},
+          absl::StrFormat("healthy_spy_%s_%s", players_[i], time));
+      AddImplicationOr(Not(reg_evil_i), {Not(is_evil_[i]), healthy_spy_i});
+    }
+  }
+  vector<BoolVar> evil_pairs;
+  for (int i = 0; i < num_players_; ++i) {
+    int next = (i + 1) % num_players_;
+    evil_pairs.push_back(
+        CreateEquivalentVarAnd({registered_evil[i], registered_evil[next]},
+                                absl::StrFormat("chef_evil_pair_%s_%s",
+                                                players_[i], players_[next])));
+  }
+  BoolVar correct = CreateEquivalentVarSumEq(
+      evil_pairs, chef_info, absl::StrFormat("chef_%s_number_%d", player,
+                                             chef_info));
+  AddOr({Not(night_roles_[0][chef][CHEF]), poisoner_pick_[0][chef], correct});
+  deferred_constraints_[chef] = false;
 }
 
 vector<int> GameState::AliveNeighbors(int player) const {

@@ -297,6 +297,54 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
 }
 
+TEST(Chef, LearnsNumber_0) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", CHEF);
+  g.AddChefInfo("P1", 0);
+  g.AddDay(1);
+  g.AddAllClaims({CHEF, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
+  g.AddClaimChefInfo("P1", 0);
+  SolverRequest request = FromCurrentRoles({
+      {"P1", CHEF}, {"P2", IMP}, {"P3", DRUNK}, {"P4", BARON},
+      {"P5", RECLUSE}});
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  request = FromCurrentRoles({
+      {"P1", CHEF}, {"P2", IMP}, {"P3", VIRGIN}, {"P4", SLAYER},
+      {"P5", POISONER}});
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  request = FromCurrentRoles({
+      {"P1", DRUNK}, {"P2", IMP}, {"P3", BARON}, {"P4", SLAYER},
+      {"P5", RECLUSE}});  // Drunk Chef
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  request = FromCurrentRoles({
+      {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", POISONER},
+      {"P5", IMP}});  // Poisoned Chef.
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  request = FromCurrentRoles({
+      {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", SPY},
+      {"P5", IMP}});  // Spy reads as Good.
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  request = FromCurrentRoles({
+      {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", SCARLET_WOMAN},
+      {"P5", IMP}});
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+}
+
+TEST(Chef, LearnsNumber_1) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P3", CHEF);
+  g.AddChefInfo("P3", 0);
+  g.AddDay(1);
+  g.AddAllClaims({RAVENKEEPER, MAYOR, CHEF, SLAYER, RECLUSE}, "P1");
+  g.AddClaimChefInfo("P3", 1);
+  SolverRequest request = FromCurrentRoles({
+      {"P1", DRUNK}, {"P2", IMP}, {"P3", CHEF}, {"P4", BARON},
+      {"P5", RECLUSE}});
+  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+}
+
 TEST(Investigator, DemonLearnsMinionRole) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);

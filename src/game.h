@@ -303,6 +303,9 @@ class GameState {
                          absl::Span<const BoolVar> literals, int sum);
   void AddEquivalenceSum(const BoolVar& var,  // var = Sum(literals)
                          absl::Span<const BoolVar> literals);
+  void AddEquivalenceSumEq(const BoolVar& var,
+                           absl::Span<const BoolVar> literals,
+                           int sum);
   void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
   void AddContradiction(const string& reason);
   BoolVar CreateEquivalentVarAnd(absl::Span<const BoolVar> literals,
@@ -311,6 +314,8 @@ class GameState {
                                 const string& name);
   BoolVar CreateEquivalentVarSum(absl::Span<const BoolVar> literals,
                                  const string& name);
+  BoolVar CreateEquivalentVarSumEq(absl::Span<const BoolVar> literals, int sum,
+                                   const string& name);
 
   vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
   void WriteSatSolutionToFile(const CpSolverResponse response,
