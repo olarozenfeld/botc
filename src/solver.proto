@@ -37,21 +37,30 @@ message SolverRequest {
 
   // If set, will count all possible boolean assignments for each world.
   // Note this might slow down the solver considerably!
+  // TODO(olaola): implement this.
   bool count_sub_worlds = 4;
+
+  // If set, will only return a world for each possible alive demon.
+  bool solve_for_demon = 5;
 
   // Debug options.
   // If present, directory to dump full SAT variable assignment files into for
   // each solution.
-  string output_sat_model_solutions_dir = 5;
+  string output_sat_model_solutions_dir = 6;
 }
 
 message SolverResponse {
   message World {
-    // Fully specified player roles in an assignment.
-    map<string, Role> roles = 1;
+    // Fully specified current player roles in an assignment.
+    map<string, Role> current_roles = 1;
 
-    // When specified, number of worlds with this assignment.
-    int64 count = 2;
+    // Starting player roles in an assignment. Omitted if equal to their current
+    // roles.
+    map<string, Role> starting_roles = 2;
+
+    // When specified, number of worlds with this assignment (or with this
+    // demon, if solve_for_demon was set in the request).
+    int64 count = 3;
   }
   repeated World worlds = 1;
 }

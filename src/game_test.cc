@@ -175,7 +175,8 @@ TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
 vector<unordered_map<string, Role>> CopyWorlds(const SolverResponse& r) {
   vector<unordered_map<string, Role>> result;
   for (const auto& w : r.worlds()) {
-    unordered_map<string, Role> world(w.roles().begin(), w.roles().end());
+    unordered_map<string, Role> world(w.current_roles().begin(),
+                                      w.current_roles().end());
     result.push_back(world);
   }
   return result;

@@ -1685,6 +1685,8 @@ void GameState::AddDemonInfo(const string& player,
   for (Role bluff : bluffs) {
     CHECK(IsGoodRole(bluff))
         << "Expected demon bluffs good roles only, got " << Role_Name(bluff);
+    // TODO(olaola): consider disallowing giving the Demon a bluff that was
+    // shown to the Drunk.
     model_.FixVariable(roles_in_play_[bluff], false);
   }
 }
@@ -2457,7 +2459,7 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
   vector<BoolVar> assumption_literals = CollectAssumptionLiterals(request);
   model.AddAssumptions(assumption_literals);
   CpSolverResponse response;
-  const auto& current_roles =
+  const auto& cur_role_vars =
     (cur_time_.IsDay ? day_roles_ : night_roles_).back();
   while (true) {
     response = Solve(model.Build());
@@ -2468,20 +2470,34 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     }
     // Translate the response back to role assignment.
     auto world = result.add_worlds();
-    auto* roles = world->mutable_roles();
+    auto* current_roles = world->mutable_current_roles();
+    auto* starting_roles = world->mutable_starting_roles();
     vector<BoolVar> current;
+    BoolVar current_demon;
     for (int i = 0; i < num_players_; ++i) {
       for (Role role : kAllRoles) {
-        if (SolutionBooleanValue(response, current_roles[i][role])) {
-          current.push_back(current_roles[i][role]);
+        const BoolVar& current_i_role = cur_role_vars[i][role];
+        const bool cur = SolutionBooleanValue(response, current_i_role);
+        if (cur) {
+          current.push_back(current_i_role);
+          if (role == IMP) {
+            current_demon = current_i_role;
+          }
           const string player = players_[i];
-          CHECK(roles->find(player) == roles->end())
-              << "Double role assignment for player " << player;
-          (*roles)[player] = role;
+          CHECK(current_roles->find(player) == current_roles->end())
+              << "Double current role assignment for player " << player;
+          (*current_roles)[player] = role;
+        }
+        if (SolutionBooleanValue(response, night_roles_[0][i][role]) && !cur) {
+          const string player = players_[i];
+          CHECK(starting_roles->find(player) == starting_roles->end())
+              << "Double starting role assignment for player " << player;
+          (*starting_roles)[player] = role;
         }
       }
     }
-    CHECK_EQ(roles->size(), num_players_) << "Not all players assigned roles.";
+    CHECK_EQ(current_roles->size(), num_players_)
+        << "Not all players assigned current roles.";
     if (!request.output_sat_model_solutions_dir().empty()) {
       const string filename = absl::StrFormat(
           "%s/sat_solution_%d", request.output_sat_model_solutions_dir(),
@@ -2491,8 +2507,13 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     if (request.stop_after_first_solution()) {
       break;
     }
-    // Limit further solutions to different role assignments:
-    model.AddBoolOr(Not(current));  // At least one literal is different.
+    if (request.solve_for_demon()) {
+      // Limit further solutions to different demons:
+      model.FixVariable(current_demon, false);
+    } else {
+      // Limit further solutions to different role assignments.
+      model.AddBoolOr(Not(current));  // At least one literal is different.
+    }
   }
   return result;
 }
