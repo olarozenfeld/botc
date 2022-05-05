@@ -344,12 +344,16 @@ void GameState::InitNightRoleVars() {
     if (AlivePlayersClaiming(MONK).size() > 0) {
       InitMonkVars();
     }
-    if (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer) {
-      // No role changes.
-      PropagateAliveRoles(night_roles_[0], night_roles, kAllRoles);
+    // Dead players never change their roles:
+    PropagateDeadRoles(day_roles_.back(), night_roles);
+    // Check if alive roles may change:
+    if (num_alive_ < 4 ||
+        (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
+      // Scarlet Woman cannot trigger, so no role changes.
+      PropagateAliveRoles(day_roles_.back(), night_roles, kAllRoles);
       return;
     }
-    PropagateDeadRoles(night_roles_[0], night_roles);
+    // Scarlet Woman can trgger and turn into the Imp.
     // The Good roles propagate from night 1:
     PropagateAliveRoles(night_roles_[0], night_roles, kGoodRoles);
     // All Evil roles except Scarlet Woman & Imp propagate from previous day:
@@ -667,10 +671,10 @@ void GameState::InitDayRoleVars() {
   day_roles_.push_back(day_roles);
   if (cur_time_.Count == 1) {
     // No possible starpass on night 1, roles propagate.
-    PropagateAliveRoles(night_roles_[0], day_roles, kAllRoles);
+    PropagateAliveRoles(night_roles_.back(), day_roles, kAllRoles);
     return;
   }
-  PropagateDeadRoles(night_roles_[0], day_roles);
+  PropagateDeadRoles(night_roles_.back(), day_roles);
   // All Good roles except Recluse always propagate from night 1:
   PropagateAliveRoles(night_roles_[0], day_roles, kTownsfolkRoles);
   PropagateAliveRoles(night_roles_[0], day_roles, {BUTLER, DRUNK, SAINT});
@@ -679,6 +683,7 @@ void GameState::InitDayRoleVars() {
 }
 
 void GameState::AddScarletWomanConstraints() {
+  // Called start of night, after a day death, with >=4 players remaining.
   // The Scarlet Woman becoming Imp triggers if and only if, on previous day:
   // * SW is alive
   // * SW is not poisoned
@@ -686,38 +691,6 @@ void GameState::AddScarletWomanConstraints() {
   // * There are >=4 alive players remaining (not counting the Imp)
   const auto& night_roles = night_roles_.back();
   const auto& day_roles = day_roles_.back();
-  if (perspective_ == STORYTELLER) {
-    // This is optimization only + sanity check code -- we can compute whether
-    // the SW procs and fix the SW/IMP role variables:
-    int sw_player = kNoPlayer;
-    for (int i = 0; i < num_players_; ++i) {
-      if (st_player_roles_[i] == SCARLET_WOMAN) {
-        sw_player = i;
-        break;
-      }
-    }
-    bool imp_died = (
-        (execution_death_ != kNoPlayer &&
-         st_player_roles_[execution_death_] == IMP) ||
-        (slayer_death_ != kNoPlayer && st_player_roles_[slayer_death_] == IMP));
-    if (num_alive_ >= 4 && imp_died && sw_player != kNoPlayer &&
-        is_alive_[sw_player] && st_poisoner_pick_ != sw_player) {
-      st_player_roles_[sw_player] = IMP;
-    }
-    for (int i = 0; i < num_players_; ++i) {
-      for (Role role : {SCARLET_WOMAN, IMP}) {
-        model_.FixVariable(night_roles[i][role], st_player_roles_[i] == role);
-      }
-    }
-    // We do not return here, because we still want to add all the general SW
-    // constraints, even though we just fixed the variables, as a sanity check.
-  }
-  if (num_alive_ < 4 ||
-      (execution_death_ == kNoPlayer && slayer_death_ == kNoPlayer)) {
-    // Then we know for sure SW can't trigger.
-    PropagateAliveRoles(day_roles, night_roles, {SCARLET_WOMAN, IMP});
-    return;
-  }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
   const BoolVar& imp_died = day_roles[death][IMP];
   BoolVar sw_alive = CreateAliveRoleVar(
@@ -728,15 +701,19 @@ void GameState::AddScarletWomanConstraints() {
       {imp_died, sw_alive, Not(sw_poisoned)},
       absl::StrFormat("sw_proc_%s", cur_time_.ToString()));
   for (int i = 0; i < num_players_; ++i) {
+    if (!is_alive_[i]) {
+      continue;
+    }
     BoolVar night_imp_i = night_roles[i][IMP];
     BoolVar night_sw_i = night_roles[i][SCARLET_WOMAN];
     BoolVar day_imp_i = day_roles[i][IMP];
     BoolVar day_sw_i = day_roles[i][SCARLET_WOMAN];
-    model_.AddImplication(day_imp_i, night_imp_i);  // The Imp remains an Imp
-    model_.AddImplicationOr(sw_proc, {Not(day_sw_i), night_imp_i});
-    model_.AddImplicationOr(Not(sw_proc), {Not(day_sw_i), night_sw_i});
-    model_.AddImplicationAnd(night_sw_i, {Not(day_sw_i), sw_proc});
-    model_.AddImplicationOr(night_imp_i, {day_imp_i, sw_proc});
+    // No proc -> roles are propagated:
+    model_.AddImplicationEq(Not(sw_proc), day_imp_i, night_imp_i);
+    model_.AddImplicationEq(Not(sw_proc), day_sw_i, night_sw_i);
+    // Otherwise, if SW procs:
+    model_.AddImplication(sw_proc, Not(night_sw_i));  // Turns into the Imp
+    model_.AddImplicationEq(sw_proc, day_sw_i, night_imp_i);
   }
 }
 

@@ -1000,12 +1000,9 @@ TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
   g.AddDay(1);
-  g.AddNomination("P1", "P1");
-  g.AddVote({"P2", "P3", "P4"}, "P1");
-  g.AddExecution("P1");
-  g.AddDeath("P1");
   g.AddNight(2);
   g.AddDay(2);
+  g.AddDeath("P1");
   g.AddNomination("P2", "P3");
   g.AddVote({"P4", "P5"}, "P3");
   g.AddExecution("P3");
