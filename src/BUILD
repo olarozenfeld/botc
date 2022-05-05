@@ -32,10 +32,33 @@ cc_library(
 )
 
 cc_library(
+    name = "model_wrapper_lib",
+    srcs = ["model_wrapper.cc"],
+    deps = [
+        ":util_lib",
+        "@com_google_absl//absl/types:span",
+        "@com_google_ortools//ortools/base",
+        "@com_google_ortools//ortools/sat:cp_model",
+    ],
+    hdrs = ["model_wrapper.h"],
+)
+
+cc_test(
+    name = "model_wrapper_test",
+    srcs = ["model_wrapper_test.cc"],
+    deps = [
+        ":model_wrapper_lib",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
     name = "game_lib",
     srcs = ["game.cc"],
     deps = [
         ":game_log_cc_proto",
+        ":model_wrapper_lib",
         ":solver_cc_proto",
         ":util_lib",
         "@com_google_absl//absl/types:span",

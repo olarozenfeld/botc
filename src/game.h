@@ -20,6 +20,7 @@
 
 #include "absl/strings/str_format.h"
 #include "src/game_log.pb.h"
+#include "src/model_wrapper.h"
 #include "src/solver.pb.h"
 #include "ortools/sat/cp_model.h"
 
@@ -279,43 +280,17 @@ class GameState {
   vector<BoolVar> CollectAliveRoles(const vector<vector<BoolVar>>& from,
                                     absl::Span<const Role> roles) const;
   BoolVar CreateAliveRoleVar(Role role, const internal::Time& time);
-  void PropagateRoles(const vector<vector<BoolVar>>& from,
-                      const vector<vector<BoolVar>>& to,
-                      absl::Span<const Role> roles);
+  void PropagateAliveRoles(const vector<vector<BoolVar>>& from,
+                           const vector<vector<BoolVar>>& to,
+                           absl::Span<const Role> roles);
+  void PropagateDeadRoles(const vector<vector<BoolVar>>& from,
+                          const vector<vector<BoolVar>>& to);
   void PropagateRolesForPlayer(int player,
                                const vector<vector<BoolVar>>& from,
                                const vector<vector<BoolVar>>& to,
                                absl::Span<const Role> roles);
   BoolVar CreatePoisonerPickedRoleVar(Role role, int night, bool only_alive);
   BoolVar CreatePoisonedRoleVar(Role role, int day, bool only_alive);
-  void AddAnd(absl::Span<const BoolVar> literals);
-  void AddOr(absl::Span<const BoolVar> literals);
-  void AddImplication(const BoolVar& v1, const BoolVar& v2);
-  void AddImplicationAnd(const BoolVar& var,
-                         absl::Span<const BoolVar> literals);
-  void AddImplicationOr(const BoolVar& var,
-                        absl::Span<const BoolVar> literals);
-  void AddEquivalenceAnd(const BoolVar& var,
-                         absl::Span<const BoolVar> literals);
-  void AddEquivalenceOr(const BoolVar& var,
-                        absl::Span<const BoolVar> literals);
-  void AddImplicationSum(const BoolVar& var,
-                         absl::Span<const BoolVar> literals, int sum);
-  void AddEquivalenceSum(const BoolVar& var,  // var = Sum(literals)
-                         absl::Span<const BoolVar> literals);
-  void AddEquivalenceSumEq(const BoolVar& var,
-                           absl::Span<const BoolVar> literals,
-                           int sum);
-  void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
-  void AddContradiction(const string& reason);
-  BoolVar CreateEquivalentVarAnd(absl::Span<const BoolVar> literals,
-                                 const string& name);
-  BoolVar CreateEquivalentVarOr(absl::Span<const BoolVar> literals,
-                                const string& name);
-  BoolVar CreateEquivalentVarSum(absl::Span<const BoolVar> literals,
-                                 const string& name);
-  BoolVar CreateEquivalentVarSumEq(absl::Span<const BoolVar> literals, int sum,
-                                   const string& name);
 
   vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
   void WriteSatSolutionToFile(const CpSolverResponse response,
@@ -367,8 +342,7 @@ class GameState {
   int st_butler_pick_;  // A player index (or kNoPlayer) for last night pick.
 
   // OR-Tools related variables: compiling BOTC to SAT.
-  unordered_map<string, BoolVar> var_cache_;  // To prevent duplicate variables.
-  CpModelBuilder model_;
+  ModelWrapper model_;
   vector<BoolVar> roles_in_play_;  // x role.
   vector<vector<vector<BoolVar>>> day_roles_;  // x day x player x role.
   vector<vector<vector<BoolVar>>> night_roles_;  // x night x player x role.
