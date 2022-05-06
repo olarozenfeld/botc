@@ -292,10 +292,14 @@ class GameState {
   BoolVar CreatePoisonerPickedRoleVar(Role role, int night, bool only_alive);
   BoolVar CreatePoisonedRoleVar(Role role, int day, bool only_alive);
 
-  vector<BoolVar> CollectAssumptionLiterals(const SolverRequest& request) const;
-  void WriteSatSolutionToFile(const CpSolverResponse response,
+  vector<BoolVar> CollectAssumptionLiterals(
+      const SolverRequest::Assumptions& assumptions) const;
+  void FillWorldFromSolverResponse(const CpSolverResponse& response,
+                                   SolverResponse::World* world) const;
+  void WriteSatSolutionToFile(const CpSolverResponse& response,
                               CpModelBuilder* model,
                               const string& filename) const;
+  int SolutionAliveDemon(const CpSolverResponse& response) const;
   int PlayerIndex(const string& name) const;
   vector<int> AliveNeighbors(int player) const;
   vector<int> AlivePlayersClaiming(Role role) const;
@@ -356,12 +360,51 @@ class GameState {
   vector<BoolVar> is_evil_;  // x player.
 };
 
-// Syntactic sugar.
-SolverRequest FromCurrentRoles(const unordered_map<string, Role>& player_roles);
-SolverRequest FromStartingRoles(
-    const unordered_map<string, Role>& player_roles);
-SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles);
+// Syntactic sugar for simplifying creating SolverRequests.
+class SolverRequestBuilder {
+ public:
+  SolverRequestBuilder() {}
+  explicit SolverRequestBuilder(
+      const SolverRequest& request):request_(request) {}
 
+  SolverRequestBuilder& AddStartingRoles(const string& player, Role role) {
+    return AddStartingRoles({{player, role}});
+  }
+  SolverRequestBuilder& AddStartingRoles(
+      const unordered_map<string, Role>& player_roles);
+  SolverRequestBuilder& AddStartingRolesNot(const string& player, Role role) {
+    return AddStartingRolesNot({{player, role}});
+  }
+  SolverRequestBuilder& AddStartingRolesNot(
+      const unordered_map<string, Role>& player_roles);
+  SolverRequestBuilder& AddCurrentRoles(const string& player, Role role) {
+    return AddCurrentRoles({{player, role}});
+  }
+  SolverRequestBuilder& AddCurrentRoles(
+      const unordered_map<string, Role>& player_roles);
+  SolverRequestBuilder& AddCurrentRolesNot(const string& player, Role role) {
+    return AddCurrentRolesNot({{player, role}});
+  }
+  SolverRequestBuilder& AddCurrentRolesNot(
+      const unordered_map<string, Role>& player_roles);
+  SolverRequestBuilder& AddRolesInPlay(absl::Span<const Role> roles);
+  SolverRequestBuilder& AddRolesNotInPlay(absl::Span<const Role> roles);
+  SolverRequestBuilder& AddGood(absl::Span<const string> players);
+  SolverRequestBuilder& AddEvil(absl::Span<const string> players);
+
+  SolverRequest Build() const { return request_; }
+
+  static SolverRequest FromCurrentRoles(
+      const unordered_map<string, Role>& player_roles) {
+    return SolverRequestBuilder().AddCurrentRoles(player_roles).Build();
+  }
+  static SolverRequest FromCurrentRoles(const string& player, Role role) {
+    return FromCurrentRoles({{player, role}});
+  }
+
+ private:
+  SolverRequest request_;
+};
 }  // namespace botc
 
 #endif  // SRC_GAME_H_

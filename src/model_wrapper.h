@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
@@ -36,7 +37,7 @@ vector<BoolVar> Not(absl::Span<const BoolVar> literals);
 
 // A convenience wrapper over CpModelBuilder.
 class ModelWrapper {
-public:
+ public:
   const CpModelBuilder& Model() const { return model_; }
   void WriteToFile(const string& filename) const;
   void WriteVariablesToFile(const string& filename) const;
@@ -77,7 +78,8 @@ public:
                                  const string& name);
   BoolVar CreateEquivalentVarSumEq(absl::Span<const BoolVar> literals, int sum,
                                    const string& name);
-private:
+
+ private:
   CpModelBuilder model_;
   unordered_map<string, BoolVar> var_cache_;  // To prevent duplicate variables
   unordered_set<string> constraint_cache_;    // and constraints.

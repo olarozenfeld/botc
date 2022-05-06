@@ -114,6 +114,7 @@ string Time::ToString() const {
 }  // namespace internal
 
 // TODO(olaola):
+// * Make sure no bugs involving use of FixVariable instead of AddEquality!
 // * Solver simplifying assumption: full round-robin role claims need to finish
 //   before info claims start. Validate this!
 // * Implement dead votes.
@@ -335,7 +336,7 @@ void GameState::InitNightRoleVars() {
         const auto& pr = night_roles[i];
         // We don't need to fix all of them, but it will be faster.
         for (Role role1 : kAllRoles) {
-            model_.FixVariable(pr[role1], role1 == role);
+          model_.FixVariable(pr[role1], role1 == role);
         }
       }
     }
@@ -1054,7 +1055,8 @@ void GameState::AddDeath(const string& name) {
     // The Imp cannot be poisoned:
     for (int i = 0; i < num_players_; ++i) {
       if (is_alive_[i]) {
-        model_.AddImplication(night_roles_.back()[i][IMP], Not(poisoner_pick[i]));
+        model_.AddImplication(night_roles_.back()[i][IMP],
+                              Not(poisoner_pick[i]));
       }
     }
     const bool possible_monk = AlivePlayersClaiming(MONK).size() > 0;
@@ -1284,21 +1286,23 @@ void GameState::AddClaimChefInfo(const string& player, int chef_info) {
       BoolVar healthy_spy_i = model_.CreateEquivalentVarAnd(
           {night_roles_[0][i][SPY], Not(poisoner_pick_[0][i])},
           absl::StrFormat("healthy_spy_%s_%s", players_[i], time));
-      model_.AddImplicationOr(Not(reg_evil_i), {Not(is_evil_[i]), healthy_spy_i});
+      model_.AddImplicationOr(Not(reg_evil_i),
+                              {Not(is_evil_[i]), healthy_spy_i});
     }
   }
   vector<BoolVar> evil_pairs;
   for (int i = 0; i < num_players_; ++i) {
-    int next = (i + 1) % num_players_;
+    int j = (i + 1) % num_players_;
     evil_pairs.push_back(
-        model_.CreateEquivalentVarAnd({registered_evil[i], registered_evil[next]},
-                                absl::StrFormat("chef_evil_pair_%s_%s",
-                                                players_[i], players_[next])));
+        model_.CreateEquivalentVarAnd(
+            {registered_evil[i], registered_evil[j]},
+            absl::StrFormat("chef_evil_pair_%s_%s", players_[i], players_[j])));
   }
   BoolVar correct = model_.CreateEquivalentVarSumEq(
       evil_pairs, chef_info, absl::StrFormat("chef_%s_number_%d", player,
                                              chef_info));
-  model_.AddOr({Not(night_roles_[0][chef][CHEF]), poisoner_pick_[0][chef], correct});
+  model_.AddOr(
+    {Not(night_roles_[0][chef][CHEF]), poisoner_pick_[0][chef], correct});
   deferred_constraints_[chef] = false;
 }
 
@@ -1773,7 +1777,8 @@ void GameState::AddLearningRoleInfoConstraints(
       {ping_false, Not(ping_poisoned)},
       absl::StrFormat("%s_ping_%s_healthy_%s", role_name,
                       players_[ping], Role_Name(false_trigger)));
-  model_.AddOr({Not(is_player_role), player_poisoned, ping_role, ping_healthy_false});
+  model_.AddOr(
+      {Not(is_player_role), player_poisoned, ping_role, ping_healthy_false});
 }
 
 void GameState::AddLearningRoleInfoConstraints(
@@ -2179,7 +2184,8 @@ void GameState::AddEvilWonConstraints() {
     return;
   }
   if (num_alive_ > 2) {
-    model_.AddContradiction("No execution and >=3 players alive, yet Evil wins");
+    model_.AddContradiction(absl::StrFormat(
+        "No execution and %d players alive, yet Evil wins", num_alive_));
     return;
   }
   model_.AddEqualitySum(CollectAliveRoles(day_roles_.back(), {IMP}), 1);
@@ -2367,37 +2373,82 @@ void GameState::AddGameNotOverConstraints() {
   }
 }
 
-SolverRequest FromCurrentRoles(
+SolverRequestBuilder& SolverRequestBuilder::AddStartingRoles(
     const unordered_map<string, Role>& player_roles) {
-  SolverRequest request;
   for (const auto& it : player_roles) {
-    auto *pr = request.mutable_current_assumptions()->add_roles();
+    auto *pr = request_.mutable_assumptions()->add_starting_roles();
     pr->set_player(it.first);
     pr->set_role(it.second);
   }
-  return request;
+  return *this;
 }
 
-SolverRequest FromStartingRoles(
+SolverRequestBuilder& SolverRequestBuilder::AddStartingRolesNot(
     const unordered_map<string, Role>& player_roles) {
-  SolverRequest request;
   for (const auto& it : player_roles) {
-    auto *pr = request.mutable_starting_assumptions()->add_roles();
+    auto *pr = request_.mutable_assumptions()->add_starting_roles();
+    pr->set_player(it.first);
+    pr->set_role(it.second);
+    pr->set_is_not(true);
+  }
+  return *this;
+}
+
+SolverRequestBuilder& SolverRequestBuilder::AddCurrentRoles(
+    const unordered_map<string, Role>& player_roles) {
+  for (const auto& it : player_roles) {
+    auto *pr = request_.mutable_assumptions()->add_current_roles();
     pr->set_player(it.first);
     pr->set_role(it.second);
   }
-  return request;
+  return *this;
 }
 
-SolverRequest FromNotInPlayRoles(absl::Span<const Role> roles) {
-  SolverRequest request;
+SolverRequestBuilder& SolverRequestBuilder::AddCurrentRolesNot(
+    const unordered_map<string, Role>& player_roles) {
+  for (const auto& it : player_roles) {
+    LOG(INFO) << "there " << it.first << ", " << Role_Name(it.second);
+    auto *pr = request_.mutable_assumptions()->add_current_roles();
+    pr->set_player(it.first);
+    pr->set_role(it.second);
+    pr->set_is_not(true);
+  }
+  return *this;
+}
+
+SolverRequestBuilder& SolverRequestBuilder::AddRolesInPlay(
+    absl::Span<const Role> roles) {
   for (Role role : roles) {
-    request.mutable_starting_assumptions()->add_roles_not_in_play(role);
+    request_.mutable_assumptions()->add_roles_in_play(role);
   }
-  return request;
+  return *this;
 }
 
-void GameState::WriteSatSolutionToFile(const CpSolverResponse response,
+SolverRequestBuilder& SolverRequestBuilder::AddRolesNotInPlay(
+    absl::Span<const Role> roles) {
+  for (Role role : roles) {
+    request_.mutable_assumptions()->add_roles_not_in_play(role);
+  }
+  return *this;
+}
+
+SolverRequestBuilder& SolverRequestBuilder::AddGood(
+    absl::Span<const string> players) {
+  for (const string& player : players) {
+    request_.mutable_assumptions()->add_is_good(player);
+  }
+  return *this;
+}
+
+SolverRequestBuilder& SolverRequestBuilder::AddEvil(
+    absl::Span<const string> players) {
+  for (const string& player : players) {
+    request_.mutable_assumptions()->add_is_evil(player);
+  }
+  return *this;
+}
+
+void GameState::WriteSatSolutionToFile(const CpSolverResponse& response,
                                        CpModelBuilder* model,
                                        const string& filename) const {
   ofstream f;
@@ -2418,49 +2469,92 @@ void GameState::WriteModelVariablesToFile(const string& filename) const {
 }
 
 vector<BoolVar> GameState::CollectAssumptionLiterals(
-    const SolverRequest& request) const {
+    const SolverRequest::Assumptions& assumptions) const {
   vector<BoolVar> assumption_literals;
   const auto& current_roles =
     (cur_time_.IsDay ? day_roles_ : night_roles_).back();
-  const auto& current_assumptions = request.current_assumptions();
-  for (const auto& pr : current_assumptions.roles()) {
-    const int player = PlayerIndex(pr.player());
-    const auto& v = current_roles[player][pr.role()];
+  for (const auto& pr : assumptions.current_roles()) {
+    const auto& v = current_roles[PlayerIndex(pr.player())][pr.role()];
     assumption_literals.push_back(pr.is_not() ? Not(v) : v);
   }
-  // TODO(olaola): support roles_in_play for current.
   const auto& starting_roles = night_roles_[0];
-  const auto& starting_assumptions = request.starting_assumptions();
-  for (const auto& pr : starting_assumptions.roles()) {
-    const int player = PlayerIndex(pr.player());
-    const auto& v = starting_roles[player][pr.role()];
+  for (const auto& pr : assumptions.starting_roles()) {
+    const auto& v = starting_roles[PlayerIndex(pr.player())][pr.role()];
     assumption_literals.push_back(pr.is_not() ? Not(v) : v);
   }
-  for (int role : starting_assumptions.roles_in_play()) {
+  for (int role : assumptions.roles_in_play()) {
     assumption_literals.push_back(roles_in_play_[role]);
   }
-  for (int role : starting_assumptions.roles_not_in_play()) {
+  for (int role : assumptions.roles_not_in_play()) {
     assumption_literals.push_back(Not(roles_in_play_[role]));
+  }
+  for (const string& player : assumptions.is_evil()) {
+    assumption_literals.push_back(is_evil_[PlayerIndex(player)]);
+  }
+  for (const string& player : assumptions.is_good()) {
+    assumption_literals.push_back(Not(is_evil_[PlayerIndex(player)]));
   }
   return assumption_literals;
 }
 
-// This function will be very slow in low-info game states. Consider adding
-// more assumptions for these cases.
+int GameState::SolutionAliveDemon(const CpSolverResponse& response) const {
+  const auto& cur_role_vars =
+    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
+  for (int i = 0; i < num_players_; ++i) {
+    if (is_alive_[i] && SolutionBooleanValue(response, cur_role_vars[i][IMP])) {
+      return i;
+    }
+  }
+  CHECK(false) << "Current Demon not found in solution.";
+}
+
+void GameState::FillWorldFromSolverResponse(
+    const CpSolverResponse& response, SolverResponse::World* world) const {
+  const auto& cur_role_vars =
+    (cur_time_.IsDay ? day_roles_ : night_roles_).back();
+  auto* current_roles = world->mutable_current_roles();
+  auto* starting_roles = world->mutable_starting_roles();
+  for (int i = 0; i < num_players_; ++i) {
+    for (Role role : kAllRoles) {
+      if (SolutionBooleanValue(response, cur_role_vars[i][role])) {
+        const string player = players_[i];
+        CHECK(current_roles->find(player) == current_roles->end())
+            << "Double current role assignment for player " << player;
+        (*current_roles)[player] = role;
+      } else if (SolutionBooleanValue(response, night_roles_[0][i][role])) {
+        const string player = players_[i];
+        CHECK(starting_roles->find(player) == starting_roles->end())
+            << "Double starting role assignment for player " << player;
+        (*starting_roles)[player] = role;
+      }
+    }
+  }
+  CHECK_EQ(current_roles->size(), num_players_)
+      << "Not all players assigned current roles.";
+}
+
 SolverResponse GameState::SolveGame(const SolverRequest& request) const {
   for (int i = 0; i < num_players_; ++i) {
     CHECK(!deferred_constraints_[i])
         << "Some night roles' actions had their constraint evaluation deferred "
         << "until public claim. Please call SolveGame after all public claims.";
   }
+  CHECK(!request.stop_after_first_solution() || !request.solve_for_demon())
+      << "solve_for_demon option does not make sense with "
+      << "stop_after_first_solution.";
+  CHECK(!request.count_demon_worlds() || request.solve_for_demon())
+      << "count_demon_worlds is only supported with solve_for_demon.";
+  const bool count_worlds_per_demon =
+      request.count_demon_worlds() && request.solve_for_demon();
   SolverResponse result;
   // Making a copy to add assumptions repeatedly.
   CpModelBuilder model(model_.Model());
-  vector<BoolVar> assumption_literals = CollectAssumptionLiterals(request);
-  model.AddAssumptions(assumption_literals);
+  model.AddAssumptions(CollectAssumptionLiterals(request.assumptions()));
   CpSolverResponse response;
+  unordered_map<int, SolverResponse::World*> worlds_per_demon;
   const auto& cur_role_vars =
     (cur_time_.IsDay ? day_roles_ : night_roles_).back();
+  int solutions = 0;
   while (true) {
     response = Solve(model.Build());
     CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
@@ -2468,48 +2562,67 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     if (response.status() == CpSolverStatus::INFEASIBLE) {
       break;
     }
-    // Translate the response back to role assignment.
-    auto world = result.add_worlds();
-    auto* current_roles = world->mutable_current_roles();
-    auto* starting_roles = world->mutable_starting_roles();
+    ++solutions;
+    const int demon = SolutionAliveDemon(response);
+    SolverResponse::World *world;
+    const auto it = worlds_per_demon.find(demon);
+    bool copy_assignment = true;
+    if (count_worlds_per_demon) {
+      if (it == worlds_per_demon.end()) {
+        world = result.add_worlds();
+        world->set_count(1);
+        worlds_per_demon[demon] = world;
+      } else {
+        world = it->second;
+        world->set_count(world->count() + 1);
+        copy_assignment = false;
+      }
+    } else {
+      world = result.add_worlds();
+    }
     vector<BoolVar> current;
-    BoolVar current_demon;
+    if (copy_assignment) {
+      FillWorldFromSolverResponse(response, world);
+    }
     for (int i = 0; i < num_players_; ++i) {
       for (Role role : kAllRoles) {
         const BoolVar& current_i_role = cur_role_vars[i][role];
-        const bool cur = SolutionBooleanValue(response, current_i_role);
-        if (cur) {
+        if (SolutionBooleanValue(response, current_i_role)) {
           current.push_back(current_i_role);
-          if (role == IMP) {
-            current_demon = current_i_role;
-          }
-          const string player = players_[i];
-          CHECK(current_roles->find(player) == current_roles->end())
-              << "Double current role assignment for player " << player;
-          (*current_roles)[player] = role;
-        }
-        if (SolutionBooleanValue(response, night_roles_[0][i][role]) && !cur) {
-          const string player = players_[i];
-          CHECK(starting_roles->find(player) == starting_roles->end())
-              << "Double starting role assignment for player " << player;
-          (*starting_roles)[player] = role;
         }
       }
     }
-    CHECK_EQ(current_roles->size(), num_players_)
-        << "Not all players assigned current roles.";
+    if (count_worlds_per_demon) {
+      string progress = absl::StrFormat("Found %d solutions", solutions);
+      absl::StrAppend(&progress, " ");
+      for (const auto it : worlds_per_demon) {
+        const string counts = absl::StrFormat(
+            "%s: %d ", players_[it.first], it.second->count());
+        absl::StrAppend(&progress, counts);
+      }
+      LOG(INFO) << progress;
+    }
     if (!request.output_sat_model_solutions_dir().empty()) {
-      const string filename = absl::StrFormat(
+      const string sat_filename = absl::StrFormat(
           "%s/sat_solution_%d", request.output_sat_model_solutions_dir(),
-          result.worlds_size());
-      WriteSatSolutionToFile(response, &model, filename);
+          solutions);
+      WriteSatSolutionToFile(response, &model, sat_filename);
+      SolverResponse::World cur_world;
+      if (count_worlds_per_demon && !copy_assignment) {
+        FillWorldFromSolverResponse(response, &cur_world);
+        world = &cur_world;
+      }
+      const string world_filename = absl::StrFormat(
+          "%s/world_%d.pbtxt", request.output_sat_model_solutions_dir(),
+          solutions);
+      WriteProtoToFile(world_filename, *world);
     }
     if (request.stop_after_first_solution()) {
       break;
     }
-    if (request.solve_for_demon()) {
+    if (request.solve_for_demon() && !request.count_demon_worlds()) {
       // Limit further solutions to different demons:
-      model.FixVariable(current_demon, false);
+      model.FixVariable(cur_role_vars[demon][IMP], false);
     } else {
       // Limit further solutions to different role assignments.
       model.AddBoolOr(Not(current));  // At least one literal is different.

@@ -24,29 +24,45 @@ message SolverRequest {
       Role role = 2;
       bool is_not = 3;  // True iff player does not have role.
     }
-    repeated PlayerRole roles = 1;
-    repeated Role roles_in_play = 2;
-    repeated Role roles_not_in_play = 3;
+    // Starting assignment.
+    repeated PlayerRole starting_roles = 1;
+
+    // Current assignment.
+    repeated PlayerRole current_roles = 2;
+
+    // Starting roles in play.
+    repeated Role roles_in_play = 3;
+
+    // Starting roles not in play.
+    repeated Role roles_not_in_play = 4;
+
+    // Players assumed evil.
+    repeated string is_evil = 5;
+
+    // Players assumed good.
+    repeated string is_good = 6;
+
+    // TODO(olaola): if needed, we can expose a lot of other variables such as
+    // "Shamyrra was poisoned day 2" or "Joanos caught a starpass night 3".
   }
-  // Additional assumptions to add into the model before solving.
-  Assumptions starting_assumptions = 1;  // State after setup.
-  Assumptions current_assumptions = 2;  // Current state.
+  // Assumptions to add into the model before solving.
+  Assumptions assumptions = 1;
 
   // If set, at most one world will be returned.
-  bool stop_after_first_solution = 3;
+  bool stop_after_first_solution = 2;
 
-  // If set, will count all possible boolean assignments for each world.
-  // Note this might slow down the solver considerably!
-  // TODO(olaola): implement this.
-  bool count_sub_worlds = 4;
+  // If set, will only return a single world for each possible alive demon.
+  bool solve_for_demon = 4;
 
-  // If set, will only return a world for each possible alive demon.
-  bool solve_for_demon = 5;
+  // Only defined if solve_for_demon is also set. This will return the number
+  // of worlds for each possible alive demon in World.count. The role assignment
+  // returned will still be the first encountered solution.
+  bool count_demon_worlds = 3;
 
   // Debug options.
-  // If present, directory to dump full SAT variable assignment files into for
-  // each solution.
-  string output_sat_model_solutions_dir = 6;
+  // If present, directory to dump full SAT variable assignment files alongside
+  // world assignments for each solution.
+  string output_sat_model_solutions_dir = 5;
 }
 
 message SolverResponse {
@@ -58,8 +74,11 @@ message SolverResponse {
     // roles.
     map<string, Role> starting_roles = 2;
 
-    // When specified, number of worlds with this assignment (or with this
-    // demon, if solve_for_demon was set in the request).
+    // Could also expose other relevant variables, e.g. starpasses, poisons,
+    // Mayor bounces, etc.
+
+    // When specified, number of worlds with this demon, if solve_for_demon was
+    // set in the request).
     int64 count = 3;
   }
   repeated World worlds = 1;

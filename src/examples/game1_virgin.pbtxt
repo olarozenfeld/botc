@@ -1,0 +1,176 @@
+perspective: PLAYER
+setup {
+  players: "Eletha"
+  players: "Alwyn"
+  players: "Goren"
+  players: "Fernia"
+  players: "Merethyl"
+  players: "Shamyrra"
+  players: "Sylvar"
+}
+events {
+  night: 1
+}
+events {
+  storyteller_interaction {
+    player: "Sylvar"
+    shown_token: VIRGIN
+  }
+}
+events {
+  day: 1
+}
+# All players hardclaim round-robin, starting from Goren.
+events {
+  claim {
+    player: "Goren"
+    role: INVESTIGATOR
+  }
+}
+events {
+  claim {
+    player: "Fernia"
+    role: SLAYER
+  }
+}
+events {
+  claim {
+    player: "Merethyl"
+    role: FORTUNE_TELLER
+  }
+}
+events {
+  claim {
+    player: "Shamyrra"
+    role: MAYOR
+  }
+}
+events {
+  claim {
+    player: "Sylvar"
+    role: VIRGIN
+  }
+}
+events {
+  claim {
+    player: "Eletha"
+    role: WASHERWOMAN
+  }
+}
+events {
+  claim {
+    player: "Alwyn"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Goren"
+    info {
+      investigator_info {
+        ping1: "Sylvar"
+        ping2: "Merethyl"
+        role: SCARLET_WOMAN
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Merethyl"
+    info {
+      fortuneteller_action {
+        pick1: "Fernia"
+        pick2: "Eletha"
+        yes: true
+      }
+    }
+  }
+}
+events {
+  claim {
+    player: "Eletha"
+    info {
+      washerwoman_info {
+        ping1: "Alwyn"
+        ping2: "Goren"
+        role: INVESTIGATOR
+      }
+    }
+  }
+}
+# Fernia claims Slayer and shoots Meterhyl (public storyteller interaction).
+events {
+  storyteller_interaction {
+    player: "Fernia"
+    role_action {
+      slayer_action: "Merethyl"
+    }
+  }
+}
+events {
+  nomination {
+    nominator: "Goren"
+    nominee: "Sylvar"
+  }
+}
+events {
+  # Virgin proc.
+  execution: "Goren"
+}
+events {
+  death: "Goren"
+}
+events {
+  night: 2
+}
+events {
+  day: 2
+}
+# Storyteller announces that Merethyl died in the night.
+events {
+  death: "Merethyl"
+}
+# Alwyn claims he protected Merethyl last night.
+events {
+  claim {
+    player: "Alwyn"
+    info {
+      monk_action: "Merethyl"
+    }
+  }
+}
+# Unsurprisingly, Alwyn is nominated.
+events {
+  nomination {
+    nominator: "Sylvar"
+    nominee: "Alwyn"
+  }
+}
+events {
+  vote {
+    votes: "Fernia"
+    votes: "Shamyrra"
+    votes: "Sylvar"
+    votes: "Eletha"
+    votes: "Alwyn"
+    on_the_block: "Alwyn"
+  }
+}
+events {
+  execution: "Alwyn"
+}
+events {
+  death: "Alwyn"
+}
+events {
+  night: 3
+}
+events {
+  day: 3
+}
+# Storyteller announces that Sylvar has died in the night.
+events {
+  death: "Sylvar"
+}
+# And now it is the final 3 with Eletha, Shamyrra and Fernia.
