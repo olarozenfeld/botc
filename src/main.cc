@@ -21,18 +21,38 @@ using std::string;
 
 // All files below are in text proto format.
 ABSL_FLAG(string, game_log, "", "Game log file path.");
+ABSL_FLAG(bool, sample_game, "", "Use the sample game in code instead of "
+          "reading the game log from file.");
 ABSL_FLAG(string, solver_parameters, "", "Solver parameters file path.");
 ABSL_FLAG(string, output_model, "", "Optional SAT model output file.");
 ABSL_FLAG(string, output_model_vars, "",
-    "Optional SAT model variables output file.");
+          "Optional SAT model variables output file.");
 ABSL_FLAG(string, output_solution, "", "Optional solution output file.");
 
 namespace botc {
 
+GameState SampleGame() {
+  GameState g = GameState::FromPlayerPerspective(
+      {"P1", "P2", "P3", "P4", "P5"});
+  g.AddNight(1);
+  g.AddDay(1);
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddNomination("P2", "P3");
+  g.AddVote({"P4", "P5"}, "P3");
+  g.AddExecution("P3");
+  g.AddDeath("P3");
+  g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
+  return g;
+}
+
 void Run() {
+  bool sample = absl::GetFlag(FLAGS_sample_game);
   string game_log = absl::GetFlag(FLAGS_game_log);
-  CHECK(!game_log.empty()) << "--game_log should be a valid path";
-  GameState g = GameState::ReadFromFile(game_log);
+  CHECK(sample || !game_log.empty())
+      << "Either set --sample_game or set --game_log to a valid path";
+  GameState g = (sample ? SampleGame() : GameState::ReadFromFile(game_log));
 
   SolverRequest request;  // If file present, read from file.
   string solver_parameters = absl::GetFlag(FLAGS_solver_parameters);
@@ -49,7 +69,7 @@ void Run() {
     g.WriteModelVariablesToFile(output_model_vars);
   }
 
-  SolverResponse solution = g.SolveGame(request);
+  SolverResponse solution = g.Solve(request);
   LOG(INFO) << "Solve response:\n" << solution.DebugString();
   string output_solution = absl::GetFlag(FLAGS_output_solution);
   if (!output_solution.empty()) {

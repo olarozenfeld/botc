@@ -2532,11 +2532,11 @@ void GameState::FillWorldFromSolverResponse(
       << "Not all players assigned current roles.";
 }
 
-SolverResponse GameState::SolveGame(const SolverRequest& request) const {
+SolverResponse GameState::Solve(const SolverRequest& request) const {
   for (int i = 0; i < num_players_; ++i) {
     CHECK(!deferred_constraints_[i])
         << "Some night roles' actions had their constraint evaluation deferred "
-        << "until public claim. Please call SolveGame after all public claims.";
+        << "until public claim. Please call Solve after all public claims.";
   }
   CHECK(!request.stop_after_first_solution() || !request.solve_for_demon())
       << "solve_for_demon option does not make sense with "
@@ -2555,7 +2555,7 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     (cur_time_.IsDay ? day_roles_ : night_roles_).back();
   int solutions = 0;
   while (true) {
-    response = Solve(model.Build());
+    response = operations_research::sat::Solve(model.Build());
     CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
     if (response.status() == CpSolverStatus::UNKNOWN) {
       LOG(WARNING) << "Solver was interrupted, returning partial solution";

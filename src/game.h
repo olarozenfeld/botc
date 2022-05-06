@@ -223,14 +223,14 @@ class GameState {
   // Solver API
 
   // Solves the game and returns all valid worlds.
-  SolverResponse SolveGame() const { return SolveGame(SolverRequest()); }
-  SolverResponse SolveGame(const SolverRequest& request) const;
+  SolverResponse Solve() const { return Solve(SolverRequest()); }
+  SolverResponse Solve(const SolverRequest& request) const;
   // Returns a single valid world.
   SolverResponse ValidWorld() const { return ValidWorld(SolverRequest()); }
   SolverResponse ValidWorld(const SolverRequest& request) const {
     SolverRequest r = request;
     r.set_stop_after_first_solution(true);
-    return SolveGame(r);
+    return Solve(r);
   }
 
   void WriteModelToFile(const string& filename) const;

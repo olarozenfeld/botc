@@ -90,6 +90,7 @@ cc_binary(
     ],
 )
 
+# This is not a part of the BOTC solver. It is used for reference.
 cc_binary(
     name = "ortools_example",
     srcs = ["ortools_example.cc"],
