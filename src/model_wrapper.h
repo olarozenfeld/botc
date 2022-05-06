@@ -47,6 +47,9 @@ class ModelWrapper {
   void FixVariable(const BoolVar& var, bool val);
   void AddAnd(absl::Span<const BoolVar> literals);
   void AddOr(absl::Span<const BoolVar> literals);
+  void AddEquality(const BoolVar& var, bool val) {
+    AddEquality(var, val ? TrueVar() : FalseVar());
+  }
   void AddEquality(const BoolVar& v1, const BoolVar& v2);
   void AddImplication(const BoolVar& v1, const BoolVar& v2);
   void AddImplicationAnd(const BoolVar& var,

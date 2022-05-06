@@ -760,7 +760,6 @@ TEST(Ravenkeeper, RecluseFalseRegisters) {
       .AddCurrentRolesNot("P5", RECLUSE)
       .AddCurrentRolesNot("P5", IMP)
       .Build();
-  LOG(INFO) << "here:\n" << request.DebugString();
   EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
 }
 

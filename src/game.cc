@@ -114,7 +114,6 @@ string Time::ToString() const {
 }  // namespace internal
 
 // TODO(olaola):
-// * Make sure no bugs involving use of FixVariable instead of AddEquality!
 // * Solver simplifying assumption: full round-robin role claims need to finish
 //   before info claims start. Validate this!
 // * Implement dead votes.
@@ -124,8 +123,9 @@ string Time::ToString() const {
 // * Validate night order.
 // * Unit test Imp starpass!!
 // * Solver optimization ideas:
-//   * Check whether I have duplicate variables or constraints (and maybe cache
-//     them).
+//   * Mayor bounce only distinguishable from regular demon kill in the
+//     Imp player perspective. Maybe forego adding constraints in these kind of
+//     situations?
 //   * Decision strategy: try to assign Imp first, then claimed roles (or
 //     Minions?).
 
@@ -268,7 +268,7 @@ void GameState::InitRedHerring(const string& name) {
     BoolVar v = model_.NewVar(name);
     red_herring_.push_back(v);
     if (perspective_ == STORYTELLER) {
-      model_.FixVariable(v, i == st_red_herring_);
+      model_.AddEquality(v, i == st_red_herring_);
     }
     // Only a Good player can be a red herring.
     model_.AddImplication(v, Not(is_evil_[i]));
@@ -298,7 +298,7 @@ void GameState::InitVarRolesInPlay() {
           break;
         }
       }
-      model_.FixVariable(v, have_role);
+      model_.AddEquality(v, have_role);
     }
   }
 }
@@ -336,7 +336,7 @@ void GameState::InitNightRoleVars() {
         const auto& pr = night_roles[i];
         // We don't need to fix all of them, but it will be faster.
         for (Role role1 : kAllRoles) {
-          model_.FixVariable(pr[role1], role1 == role);
+          model_.AddEquality(pr[role1], role1 == role);
         }
       }
     }
@@ -407,7 +407,7 @@ void GameState::InitShownTokenVars() {
     // Every player was shown exactly one token:
     model_.AddEqualitySum(shown_token, 1);
     // No one is shown the DRUNK token:
-    model_.FixVariable(shown_token[DRUNK], false);
+    model_.AddEquality(shown_token[DRUNK], false);
   }
   // All shown tokens are unique:
   for (Role role : kAllRoles) {
@@ -857,7 +857,7 @@ void GameState::PropagateRolesForPlayer(
     model_.AddEquality(from[player][role], to[player][role]);
     // Optimization: for storyteller perspective, we can fix these vars:
     if (perspective_ == STORYTELLER) {
-      model_.FixVariable(to[player][role], st_player_roles_[player] == role);
+      model_.AddEquality(to[player][role], st_player_roles_[player] == role);
     }
   }
 }
@@ -1062,7 +1062,7 @@ void GameState::AddDeath(const string& name) {
     const bool possible_monk = AlivePlayersClaiming(MONK).size() > 0;
     // The target cannot be Monk-protected by a healthy Monk:
     if (possible_monk) {
-      model_.FixVariable(healthy_monk_protected_.back()[death], false);
+      model_.AddEquality(healthy_monk_protected_.back()[death], false);
     }
     // The target cannot be a non-poisoned Soldier:
     model_.AddOr({poisoner_pick[death], Not(night_roles_[0][death][SOLDIER])});
@@ -1594,7 +1594,7 @@ void GameState::AddShownToken(const string& player, Role role) {
     perspective_player_shown_token_ = role;
   }
   if (cur_time_.Count == 1) {
-    model_.FixVariable(shown_token_[p_index][role], true);
+    model_.AddEquality(shown_token_[p_index][role], true);
   } else {  // role is IMP
     // TODO(olaola): fill this case (starpass/SW proc occurred).
   }
@@ -1635,7 +1635,7 @@ void GameState::AddMinionInfo(const string& player, const string& demon,
   // Minion info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
   const int demon_index = PlayerIndex(demon);
-  model_.FixVariable(assigned_roles[demon_index][IMP], true);
+  model_.AddEquality(assigned_roles[demon_index][IMP], true);
   for (const string& minion_name : minions) {
     vector<BoolVar> minion_i;
     for (Role role : kMinionRoles) {
@@ -1691,7 +1691,7 @@ void GameState::AddDemonInfo(const string& player,
         << "Expected demon bluffs good roles only, got " << Role_Name(bluff);
     // TODO(olaola): consider disallowing giving the Demon a bluff that was
     // shown to the Drunk.
-    model_.FixVariable(roles_in_play_[bluff], false);
+    model_.AddEquality(roles_in_play_[bluff], false);
   }
 }
 
@@ -2057,7 +2057,7 @@ void GameState::AddPoisonerAction(const string& player,
   if (perspective_ == STORYTELLER) {
     st_poisoner_pick_ = target;
   }
-  model_.FixVariable(poisoner_pick_.back()[target], true);
+  model_.AddEquality(poisoner_pick_.back()[target], true);
 }
 
 void GameState::AddImpAction(const string& player, const string& imp_action) {
@@ -2071,7 +2071,7 @@ void GameState::AddImpAction(const string& player, const string& imp_action) {
   if (perspective_ == STORYTELLER) {
     st_imp_pick_ = target;
   }
-  model_.FixVariable(imp_pick_.back()[target], true);
+  model_.AddEquality(imp_pick_.back()[target], true);
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
@@ -2144,7 +2144,7 @@ void GameState::AddGoodWonConstraints() {
           {alive, Not(poisoned)}, absl::StrFormat("mayor_win_%s", time));
     }
     if (night_death_ == kNoPlayer) {
-      model_.FixVariable(mayor_win, true);
+      model_.AddEquality(mayor_win, true);
       return;
     }
     // The silly suicide case:
@@ -2161,7 +2161,7 @@ void GameState::AddGoodWonConstraints() {
     return;
   }
   int death = slayer_death_ != kNoPlayer ? slayer_death_ : execution_death_;
-  model_.FixVariable(day_roles[death][IMP], true);
+  model_.AddEquality(day_roles[death][IMP], true);
   if (num_alive_ >= 4) {
     // SW is not alive or is poisoned.
     const auto& poisoner_pick = poisoner_pick_.back();
@@ -2219,7 +2219,7 @@ BoolVar GameState::CreatePoisonerPickedRoleVar(
   BoolVar role_picked = model_.NewVar(
       absl::StrFormat("poisoner_picked_%s_night_%d", Role_Name(role), night));
   if (picked_role_players.size() == 0) {
-    model_.FixVariable(role_picked, false);
+    model_.AddEquality(role_picked, false);
   } else {
     model_.AddEquivalenceSum(role_picked, picked_role_players);
   }
@@ -2407,7 +2407,6 @@ SolverRequestBuilder& SolverRequestBuilder::AddCurrentRoles(
 SolverRequestBuilder& SolverRequestBuilder::AddCurrentRolesNot(
     const unordered_map<string, Role>& player_roles) {
   for (const auto& it : player_roles) {
-    LOG(INFO) << "there " << it.first << ", " << Role_Name(it.second);
     auto *pr = request_.mutable_assumptions()->add_current_roles();
     pr->set_player(it.first);
     pr->set_role(it.second);
@@ -2505,7 +2504,7 @@ int GameState::SolutionAliveDemon(const CpSolverResponse& response) const {
       return i;
     }
   }
-  CHECK(false) << "Current Demon not found in solution.";
+  return kNoPlayer;
 }
 
 void GameState::FillWorldFromSolverResponse(
@@ -2558,7 +2557,10 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
   while (true) {
     response = Solve(model.Build());
     CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
-    CHECK(response.status() != CpSolverStatus::UNKNOWN);
+    if (response.status() == CpSolverStatus::UNKNOWN) {
+      LOG(WARNING) << "Solver was interrupted, returning partial solution";
+      break;
+    }
     if (response.status() == CpSolverStatus::INFEASIBLE) {
       break;
     }
@@ -2596,8 +2598,10 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
       string progress = absl::StrFormat("Found %d solutions", solutions);
       absl::StrAppend(&progress, " ");
       for (const auto it : worlds_per_demon) {
+        const int demon = it.first;
         const string counts = absl::StrFormat(
-            "%s: %d ", players_[it.first], it.second->count());
+            "%s: %d ", demon == kNoPlayer ? "<Dead Imp>" : players_[demon],
+            it.second->count());
         absl::StrAppend(&progress, counts);
       }
       LOG(INFO) << progress;
@@ -2622,6 +2626,9 @@ SolverResponse GameState::SolveGame(const SolverRequest& request) const {
     }
     if (request.solve_for_demon() && !request.count_demon_worlds()) {
       // Limit further solutions to different demons:
+      if (demon == kNoPlayer) {  // Only possible if game is over.
+        break;
+      }
       model.FixVariable(cur_role_vars[demon][IMP], false);
     } else {
       // Limit further solutions to different role assignments.
