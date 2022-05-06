@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <utility>
 
 #include "absl/strings/str_format.h"
 #include "src/game_log.pb.h"
@@ -34,6 +35,7 @@ using operations_research::sat::BoolVar;
 using std::string;
 using std::vector;
 using std::map;
+using std::pair;
 using std::unordered_map;
 
 namespace internal {
@@ -220,21 +222,24 @@ class GameState {
 
   Role ShownToken(const string& player) const;
 
+  void WriteModelToFile(const string& filename) const;
+  void WriteModelVariablesToFile(const string& filename) const;
+
   // Solver API
 
   // Solves the game and returns all valid worlds.
   SolverResponse Solve() const { return Solve(SolverRequest()); }
+  // Solves the game using options from the request.
   SolverResponse Solve(const SolverRequest& request) const;
-  // Returns a single valid world.
-  SolverResponse ValidWorld() const { return ValidWorld(SolverRequest()); }
-  SolverResponse ValidWorld(const SolverRequest& request) const {
+
+  // Returns whether a valid world exists.
+  bool IsValidWorld() const { return IsValidWorld(SolverRequest()); }
+  // Returns whether a valid world exists given all assumptions in the request.
+  bool IsValidWorld(const SolverRequest& request) const {
     SolverRequest r = request;
     r.set_stop_after_first_solution(true);
-    return Solve(r);
+    return Solve(r).worlds_size() > 0;
   }
-
-  void WriteModelToFile(const string& filename) const;
-  void WriteModelVariablesToFile(const string& filename) const;
 
  private:
   GameState(Perspective perspective, const Setup& setup);
@@ -386,7 +391,7 @@ class SolverRequestBuilder {
     return AddCurrentRolesNot({{player, role}});
   }
   SolverRequestBuilder& AddCurrentRolesNot(
-      const unordered_map<string, Role>& player_roles);
+      absl::Span<const pair<string, Role>> player_roles);
   SolverRequestBuilder& AddRolesInPlay(absl::Span<const Role> roles);
   SolverRequestBuilder& AddRolesNotInPlay(absl::Span<const Role> roles);
   SolverRequestBuilder& AddGood(absl::Span<const string> players);
@@ -400,6 +405,13 @@ class SolverRequestBuilder {
   }
   static SolverRequest FromCurrentRoles(const string& player, Role role) {
     return FromCurrentRoles({{player, role}});
+  }
+  static SolverRequest FromCurrentRolesNot(
+      absl::Span<const pair<string, Role>> player_roles) {
+    return SolverRequestBuilder().AddCurrentRolesNot(player_roles).Build();
+  }
+  static SolverRequest FromCurrentRolesNot(const string& player, Role role) {
+    return FromCurrentRolesNot({{player, role}});
   }
 
  private:

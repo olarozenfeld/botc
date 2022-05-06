@@ -2405,11 +2405,11 @@ SolverRequestBuilder& SolverRequestBuilder::AddCurrentRoles(
 }
 
 SolverRequestBuilder& SolverRequestBuilder::AddCurrentRolesNot(
-    const unordered_map<string, Role>& player_roles) {
-  for (const auto& it : player_roles) {
+    absl::Span<const pair<string, Role>> player_roles) {
+  for (const auto& p : player_roles) {
     auto *pr = request_.mutable_assumptions()->add_current_roles();
-    pr->set_player(it.first);
-    pr->set_role(it.second);
+    pr->set_player(p.first);
+    pr->set_role(p.second);
     pr->set_is_not(true);
   }
   return *this;

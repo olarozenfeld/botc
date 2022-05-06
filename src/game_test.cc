@@ -42,6 +42,21 @@ GameState FromRoles(absl::Span<const Role> roles) {
   return FromRolesWithRedHerring(roles, "");
 }
 
+vector<unordered_map<string, Role>> CopyWorlds(const SolverResponse& r) {
+  vector<unordered_map<string, Role>> result;
+  for (const auto& w : r.worlds()) {
+    unordered_map<string, Role> world(w.current_roles().begin(),
+                                      w.current_roles().end());
+    result.push_back(world);
+  }
+  return result;
+}
+
+// Nasty hack -- I should write a gMock matcher for this instead, especially
+// to compare multiple worlds unordered.
+#define EXPECT_WORLDS_EQ(r, w) \
+    EXPECT_THAT(CopyWorlds(r), testing::UnorderedElementsAreArray(w))
+
 TEST(Proto, ToAndFromProto) {
   SpyInfo spy_info;
   GameState g = FromRolesWithRedHerring(
@@ -107,85 +122,70 @@ TEST(Proto, ToAndFromProto) {
 
 TEST(ValidateSTRoleSetup, Valid5PlayersNoBaron) {
   GameState g = FromRoles({IMP, MONK, SPY, EMPATH, VIRGIN});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Valid5PlayersBaron) {
   GameState g = FromRoles({IMP, SAINT, BARON, BUTLER, LIBRARIAN});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Valid6PlayersNoBaron) {
   GameState g = FromRoles({DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Valid6PlayersBaron) {
   GameState g = FromRoles({DRUNK, RECLUSE, MONK, BARON, SAINT, IMP});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Valid9PlayersNoBaron) {
   GameState g = FromRoles({DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, IMP,
                            SAINT, WASHERWOMAN, CHEF});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Valid9PlayersBaron) {
   GameState g = FromRoles({DRUNK, SLAYER, RECLUSE, BUTLER, EMPATH, IMP, SAINT,
                            WASHERWOMAN, BARON});
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoImp) {
   GameState g = FromRoles({DRUNK, SLAYER, MONK, SCARLET_WOMAN, EMPATH, CHEF});
-  EXPECT_EQ(g.Solve().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Invalid6PlayersNoMinion) {
   GameState g = FromRoles({DRUNK, SLAYER, MONK, CHEF, EMPATH, IMP});
-  EXPECT_EQ(g.Solve().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Invalid13PlayersTwoMinions) {
   GameState g = FromRoles(
     {VIRGIN, SLAYER, MONK, CHEF, EMPATH, IMP, SPY, SCARLET_WOMAN,
      INVESTIGATOR, WASHERWOMAN, MAYOR, UNDERTAKER, SOLDIER});
-  EXPECT_EQ(g.Solve().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, Invalid5PlayersRoleRepeat) {
   GameState g = FromRoles({IMP, EMPATH, SPY, EMPATH, VIRGIN});
-  EXPECT_EQ(g.Solve().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, ValidFortuneTellerRedHerring) {
   GameState g = FromRolesWithRedHerring(
       {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP}, "P2");
-  EXPECT_EQ(g.Solve().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(ValidateSTRoleSetup, InvalidFortuneTellerRedHerring) {
   GameState g = FromRolesWithRedHerring(
       {DRUNK, SLAYER, FORTUNE_TELLER, SCARLET_WOMAN, EMPATH, IMP}, "P4");
   // The SW can't be a red herring.
-  EXPECT_EQ(g.Solve().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
-
-vector<unordered_map<string, Role>> CopyWorlds(const SolverResponse& r) {
-  vector<unordered_map<string, Role>> result;
-  for (const auto& w : r.worlds()) {
-    unordered_map<string, Role> world(w.current_roles().begin(),
-                                      w.current_roles().end());
-    result.push_back(world);
-  }
-  return result;
-}
-
-// Nasty hack -- I should write a gMock matcher for this instead, especially
-// to compare multiple worlds unordered.
-#define EXPECT_WORLDS_EQ(r, w) \
-    EXPECT_THAT(CopyWorlds(r), testing::UnorderedElementsAreArray(w))
 
 TEST(WorldEnumeration, MinionPerspectiveBaronFull) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
@@ -295,7 +295,7 @@ TEST(WorldEnumeration, InvalidDemonPerspective7Players) {
   g.AddAllClaims(
       {EMPATH, SAINT, CHEF, VIRGIN, MAYOR, SLAYER, RAVENKEEPER}, "P1");
   // This is impossible, since Chef is a demon bluff.
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(Chef, LearnsNumber_0) {
@@ -306,30 +306,30 @@ TEST(Chef, LearnsNumber_0) {
   g.AddDay(1);
   g.AddAllClaims({CHEF, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
   g.AddClaimChefInfo("P1", 0);
-  SolverRequest request = SolverRequestBuilder::FromCurrentRoles({
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", CHEF}, {"P2", IMP}, {"P3", DRUNK}, {"P4", BARON},
       {"P5", RECLUSE}});
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles({
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", CHEF}, {"P2", IMP}, {"P3", VIRGIN}, {"P4", SLAYER},
       {"P5", POISONER}});
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles({
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", DRUNK}, {"P2", IMP}, {"P3", BARON}, {"P4", SLAYER},
       {"P5", RECLUSE}});  // Drunk Chef
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles({
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", POISONER},
       {"P5", IMP}});  // Poisoned Chef.
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles({
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", SPY},
       {"P5", IMP}});  // Spy reads as Good.
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles({
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", CHEF}, {"P2", MAYOR}, {"P3", VIRGIN}, {"P4", SCARLET_WOMAN},
       {"P5", IMP}});
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(Chef, LearnsNumber_1) {
@@ -340,10 +340,10 @@ TEST(Chef, LearnsNumber_1) {
   g.AddDay(1);
   g.AddAllClaims({RAVENKEEPER, MAYOR, CHEF, SLAYER, RECLUSE}, "P1");
   g.AddClaimChefInfo("P3", 1);
-  SolverRequest request = SolverRequestBuilder::FromCurrentRoles({
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles({
       {"P1", DRUNK}, {"P2", IMP}, {"P3", CHEF}, {"P4", BARON},
       {"P5", RECLUSE}});
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld(r));
 }
 
 TEST(Investigator, DemonLearnsMinionRole) {
@@ -508,14 +508,12 @@ TEST(Undertaker, SpyFalseRegisters) {
   g.AddDay(2);
   g.AddClaimUndertakerInfo("P1", INVESTIGATOR);
   SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P5", SPY);
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld(r));
   r = SolverRequestBuilder::FromCurrentRoles("P5", INVESTIGATOR);
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
-  r = SolverRequestBuilder()
-      .AddRolesNotInPlay({SPY})
-      .AddCurrentRolesNot("P5", INVESTIGATOR)
-      .Build();
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 0);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot(
+      {{"P5", SPY}, {"P5", INVESTIGATOR}});
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(Undertaker, RecluseFalseRegisters) {
@@ -533,14 +531,11 @@ TEST(Undertaker, RecluseFalseRegisters) {
   g.AddDay(2);
   g.AddClaimUndertakerInfo("P1", IMP);
   SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P5", RECLUSE);
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld(r));
   r = SolverRequestBuilder::FromCurrentRoles("P5", IMP);
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
-  r = SolverRequestBuilder()
-      .AddCurrentRolesNot("P5", IMP)
-      .AddCurrentRolesNot("P5", RECLUSE)
-      .Build();
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 0);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot({{"P5", IMP}, {"P5", RECLUSE}});
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(Undertaker, HealthyUndertakerUseless) {
@@ -637,7 +632,7 @@ TEST(NightDeaths, ImpDeducesSoberMonk) {
   g.AddImpAction("P1", "P6");
   g.AddDay(2);
   g.AddNoStorytellerAnnouncement();  // No deaths -> Monk is sober.
-  const SolverRequest& r = SolverRequestBuilder::FromCurrentRoles("P7", MONK);
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P7", MONK);
   EXPECT_EQ(g.Solve(r).worlds_size(), g.Solve().worlds_size());
 }
 
@@ -694,7 +689,7 @@ TEST(NightDeaths, MayorBounceToMonkProtectedTarget) {
   g.AddImpAction("P1", "P4");  // Imp tries to kill the Mayor.
   g.AddDay(2);
   g.AddClaimMonkAction("P3", "P7");  // Kill bounced to P7.
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(NightDeaths, MayorBounce) {
@@ -707,7 +702,7 @@ TEST(NightDeaths, MayorBounce) {
   g.AddImpAction("P1", "P3");  // Imp tries to kill the Mayor.
   g.AddDay(2);
   g.AddDeath("P5");
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(Ravenkeeper, SpyFalseRegisters) {
@@ -725,15 +720,13 @@ TEST(Ravenkeeper, SpyFalseRegisters) {
   g.AddDay(2);
   g.AddDeath("P1");
   g.AddClaimRavenkeeperAction("P1", "P5", INVESTIGATOR);
-  SolverRequest request = SolverRequestBuilder::FromCurrentRoles("P5", SPY);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles("P5", INVESTIGATOR);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder()
-      .AddRolesNotInPlay({SPY})
-      .AddCurrentRolesNot("P5", INVESTIGATOR)
-      .Build();
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P5", SPY);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles("P5", INVESTIGATOR);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot(
+      {{"P5", SPY}, {"P5", INVESTIGATOR}});
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(Ravenkeeper, RecluseFalseRegisters) {
@@ -751,16 +744,12 @@ TEST(Ravenkeeper, RecluseFalseRegisters) {
   g.AddDay(2);
   g.AddDeath("P1");
   g.AddClaimRavenkeeperAction("P1", "P5", IMP);
-  SolverRequest request =
-      SolverRequestBuilder::FromCurrentRoles("P5", RECLUSE);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder::FromCurrentRoles("P5", IMP);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request = SolverRequestBuilder()
-      .AddCurrentRolesNot("P5", RECLUSE)
-      .AddCurrentRolesNot("P5", IMP)
-      .Build();
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P5", RECLUSE);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRoles("P5", IMP);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot({{"P5", IMP}, {"P5", RECLUSE}});
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(Ravenkeeper, LearnsTrueRole) {
@@ -775,7 +764,7 @@ TEST(Ravenkeeper, LearnsTrueRole) {
   g.AddDay(2);
   g.AddDeath("P3");
   g.AddClaimRavenkeeperAction("P3", "P2", BARON);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(Ravenkeeper, DrunkRavenkeeperLearnsFalseRole) {
@@ -790,7 +779,7 @@ TEST(Ravenkeeper, DrunkRavenkeeperLearnsFalseRole) {
   g.AddDay(2);
   g.AddDeath("P3");
   g.AddClaimRavenkeeperAction("P3", "P2", UNDERTAKER);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(Ravenkeeper, PoisonedRavenkeeperLearnsFalseRole) {
@@ -806,7 +795,7 @@ TEST(Ravenkeeper, PoisonedRavenkeeperLearnsFalseRole) {
   g.AddDay(2);
   g.AddDeath("P3");
   g.AddClaimRavenkeeperAction("P3", "P2", SAINT);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(Ravenkeeper, InvalidRavenkeeperLearnsFalseRole) {
@@ -822,7 +811,7 @@ TEST(Ravenkeeper, InvalidRavenkeeperLearnsFalseRole) {
   g.AddDay(2);
   g.AddDeath("P3");
   g.AddClaimRavenkeeperAction("P3", "P2", SAINT);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(FortuneTeller, LearnsTrueInfo) {
@@ -850,7 +839,7 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   g.AddFortuneTellerAction("P3", "P4", "P2", false);
   g.AddDay(4);
   g.AddClaimFortuneTellerAction("P3", "P4", "P2", false);  // Recluse no-proc.
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(Empath, LearnsTrueInfo) {
@@ -900,7 +889,7 @@ TEST(Empath, LearnsTrueInfo) {
       {"P1", EMPATH}, {"P2", SPY}, {"P3", SOLDIER}, {"P4", MAYOR},
       {"P5", SLAYER}, {"P6", RAVENKEEPER}, {"P7", IMP}, {"P8", BARON},
       {"P9", DRUNK}, {"P10", RECLUSE}});
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld(r));
 }
 
 TEST(Slayer, ImpDeducesDrunkSlayer) {
@@ -968,7 +957,7 @@ TEST(Soldier, InvalidImpKillsHealthySoldier) {
   g.AddNight(2);
   g.AddDay(2);
   g.AddDeath("P5");
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld());
 }
 
 TEST(GameEndConditions, ExecuteImpGameOver) {
@@ -980,17 +969,15 @@ TEST(GameEndConditions, ExecuteImpGameOver) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddVictory(GOOD);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
-  SolverRequest request;
-  auto* pr = request.mutable_assumptions()->add_current_roles();
-  pr->set_player("P1");
-  pr->set_role(IMP);
-  pr->set_is_not(true);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
-  pr->set_is_not(false);
-  request.mutable_assumptions()->add_roles_in_play(SCARLET_WOMAN);
+  EXPECT_TRUE(g.IsValidWorld());
+  SolverRequest r = SolverRequestBuilder::FromCurrentRolesNot({{"P1", IMP}});
+  EXPECT_FALSE(g.IsValidWorld(r));
+  r = SolverRequestBuilder()
+      .AddCurrentRoles({{"P1", IMP}})
+      .AddRolesInPlay({SCARLET_WOMAN})
+      .Build();
   // Because the SW would have proc-ed.
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
@@ -1006,7 +993,7 @@ TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
   g.AddDeath("P3");
   g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
   SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P3", IMP);
-  EXPECT_EQ(g.ValidWorld(r).worlds_size(), 0);
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
@@ -1018,10 +1005,11 @@ TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddNight(2);  // The game continues, so P1 Imp -> SW in play.
-  SolverRequest request = SolverRequestBuilder::FromCurrentRoles("P1", IMP);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 1);
-  request.mutable_assumptions()->add_roles_not_in_play(SCARLET_WOMAN);
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  SolverRequestBuilder r =
+      SolverRequestBuilder().AddCurrentRoles({{"P1", IMP}});
+  EXPECT_TRUE(g.IsValidWorld(r.Build()));
+  r.AddRolesNotInPlay({SCARLET_WOMAN});
+  EXPECT_FALSE(g.IsValidWorld(r.Build()));
 }
 
 TEST(GameEndConditions, ExecuteSaintGameOver) {
@@ -1035,7 +1023,7 @@ TEST(GameEndConditions, ExecuteSaintGameOver) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddVictory(EVIL);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(GameEndConditions, ExecuteSaintGameNotOverPoisoner) {
@@ -1049,11 +1037,11 @@ TEST(GameEndConditions, ExecuteSaintGameNotOverPoisoner) {
   g.AddExecution("P1");
   g.AddDeath("P1");
   g.AddNight(2);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
   // Poisoner must have got us:
-  SolverRequest request = SolverRequestBuilder()
-      .AddRolesNotInPlay({POISONER}).Build();
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  SolverRequest r =
+      SolverRequestBuilder().AddRolesNotInPlay({POISONER}).Build();
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 
 TEST(GameEndConditions, MayorWin) {
@@ -1070,7 +1058,7 @@ TEST(GameEndConditions, MayorWin) {
   g.AddDay(2);
   g.AddDeath("P4");  // Final 3.
   g.AddVictory(GOOD);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
 }
 
 TEST(GameEndConditions, PoisonedMayorNoWin) {
@@ -1090,11 +1078,11 @@ TEST(GameEndConditions, PoisonedMayorNoWin) {
   g.AddDay(3);
   g.AddDeath("P2");
   g.AddVictory(EVIL);
-  EXPECT_EQ(g.ValidWorld().worlds_size(), 1);
+  EXPECT_TRUE(g.IsValidWorld());
   // Poisoner must have got us:
-  SolverRequest request = SolverRequestBuilder()
-      .AddRolesNotInPlay({POISONER}).Build();
-  EXPECT_EQ(g.ValidWorld(request).worlds_size(), 0);
+  SolverRequest r =
+      SolverRequestBuilder().AddRolesNotInPlay({POISONER}).Build();
+  EXPECT_FALSE(g.IsValidWorld(r));
 }
 }  // namespace
 }  // namespace botc
