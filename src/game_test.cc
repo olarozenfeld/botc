@@ -418,6 +418,18 @@ TEST(VotingProcess, ProgressiveVotes) {
   g.AddNomination("P4", "P4");
   g.AddVote({"P5", "P1", "P2", "P4"}, "P4");  // Vote succeeds
   EXPECT_EQ(g.OnTheBlock(), "P4");
+  g.AddExecution("P4");
+  g.AddDeath("P4");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddNomination("P2", "P2");
+  g.AddVote({"P1"}, "");
+  EXPECT_TRUE(g.UsedDeadVote("P1"));
+  EXPECT_FALSE(g.UsedDeadVote("P4"));
+  g.AddNomination("P3", "P3");
+  g.AddVote({"P4", "P3"}, "3");
+  EXPECT_TRUE(g.UsedDeadVote("P4"));
 }
 
 TEST(Virgin, HealthyVirginProc) {

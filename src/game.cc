@@ -116,12 +116,10 @@ string Time::ToString() const {
 // TODO(olaola):
 // * Solver simplifying assumption: full round-robin role claims need to finish
 //   before info claims start. Validate this!
-// * Implement dead votes.
 // * Decide what to do about the Butler -- maybe support the "full" voting?
 // * Replace CHECKs with absl::Status everywhere for testing.
 // * Validate player interactions (e.g. exactly 1 FT action per night)
 // * Validate night order.
-// * Unit test Imp starpass!!
 // * Solver optimization ideas:
 //   * Mayor bounce only distinguishable from regular demon kill in the
 //     Imp player perspective. Maybe forego adding constraints in these kind of
@@ -210,10 +208,10 @@ GameState::GameState(Perspective perspective, const Setup& setup)
       perspective_player_(kNoPlayer),
       perspective_player_shown_token_(ROLE_UNSPECIFIED),
       night_action_used_(num_players_), deferred_constraints_(num_players_),
-      st_player_roles_(num_players_), st_shown_tokens_(num_players_),
-      st_red_herring_(kNoPlayer), st_poisoner_pick_(kNoPlayer),
-      st_imp_pick_(kNoPlayer), st_monk_pick_(kNoPlayer),
-      st_butler_pick_(kNoPlayer) {
+      dead_vote_used_(num_players_), st_player_roles_(num_players_),
+      st_shown_tokens_(num_players_), st_red_herring_(kNoPlayer),
+      st_poisoner_pick_(kNoPlayer), st_imp_pick_(kNoPlayer),
+      st_monk_pick_(kNoPlayer), st_butler_pick_(kNoPlayer) {
   CHECK_NE(perspective_, PERSPECTIVE_UNSPECIFIED)
       << "Need to specify perspective";
   CHECK_GE(num_players_, 5);
@@ -939,7 +937,12 @@ void GameState::AddVote(absl::Span<const string> votes,
   const auto& nomination = nominations_.back();
   // TODO(olaola): validate vote correctness better!
   for (const string& name : votes) {
-    CHECK_NE(PlayerIndex(name), kNoPlayer) << "Invalid voter " << name;
+    const int i = PlayerIndex(name);
+    CHECK_NE(i, kNoPlayer) << "Invalid voter " << name;
+    CHECK(!dead_vote_used_[i]) << name << " has already used their dead vote";
+    if (!is_alive_[i]) {
+      dead_vote_used_[i] = true;
+    }
   }
   int cur_block = kNoPlayer;
   if (!on_the_block.empty()) {

@@ -180,6 +180,10 @@ class GameState {
     return is_alive_[PlayerIndex(player)];
   }
 
+  bool UsedDeadVote(const string& player) const {
+    return dead_vote_used_[PlayerIndex(player)];
+  }
+
   Role ClaimedRole(const string& player) const {
     return claim_of_player_[PlayerIndex(player)];
   }
@@ -340,6 +344,7 @@ class GameState {
   Role perspective_player_shown_token_;
   vector<bool> night_action_used_;  // x player, true when ability was used.
   vector<bool> deferred_constraints_;  // x player.
+  vector<bool> dead_vote_used_;  // x player, true when dead and voted.
 
   // These variables are only used in the storyteller perspective.
   vector<Role> st_player_roles_;  // Current roles.
