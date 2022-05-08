@@ -1440,8 +1440,8 @@ void GameState::AddClaimFortuneTellerAction(
   BeforeEvent(Event::kClaim);
   const int i = PlayerIndex(player);
   const int p1 = PlayerIndex(pick1), p2 = PlayerIndex(pick2);
-  vector<BoolVar> yes_options({night_roles_.back()[p1][IMP], red_herring_[p1],
-                               night_roles_.back()[p2][IMP], red_herring_[p2]});
+  vector<BoolVar> yes_options({day_roles_.back()[p1][IMP], red_herring_[p1],
+                               day_roles_.back()[p2][IMP], red_herring_[p2]});
   BoolVar poisoned_recluse;
   // This optimization is why we want to finish the role claims before claming
   // role info.
@@ -1452,14 +1452,14 @@ void GameState::AddClaimFortuneTellerAction(
     for (int ping : {p1, p2}) {
       if (is_alive_[ping] && claim_of_player_[ping] == RECLUSE) {
         yes_options.push_back(model_.CreateEquivalentVarAnd(
-          {night_roles_.back()[ping][RECLUSE], Not(poisoned_recluse)},
+          {day_roles_.back()[ping][RECLUSE], Not(poisoned_recluse)},
           absl::StrFormat("healthy_recluse_%s_%s", players_[ping],
                           cur_time_.ToString())));
       }
     }
   }
   vector<BoolVar> cases({
-      Not(night_roles_.back()[i][FORTUNE_TELLER]),
+      Not(day_roles_.back()[i][FORTUNE_TELLER]),
       CreatePoisonedRoleVar(FORTUNE_TELLER, cur_time_.Count, true)});
   BoolVar is_yes = model_.CreateEquivalentVarOr(
     yes_options,

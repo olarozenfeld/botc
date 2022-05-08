@@ -705,8 +705,6 @@ TEST(NightDeaths, MayorBounce) {
   EXPECT_TRUE(g.IsValidWorld());
 }
 
-// TODO(olaola): remember to test FortuneTeller info after a starpass!
-
 TEST(Starpass, ImpPerspectiveSuccessToBaron) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
   g.AddNight(1);
@@ -720,10 +718,10 @@ TEST(Starpass, ImpPerspectiveSuccessToBaron) {
   g.AddDay(2);
   g.AddDeath("P1");
   g.AddNoStorytellerAnnouncement();
-  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P2", IMP);
-  EXPECT_TRUE(g.IsValidWorld(r));
-  r = SolverRequestBuilder::FromCurrentRolesNot("P2", IMP);
-  EXPECT_FALSE(g.IsValidWorld(r));
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", IMP}, {"P3", BUTLER}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 
 TEST(Starpass, ImpPerspectiveSuccessToRecluse) {
@@ -739,10 +737,10 @@ TEST(Starpass, ImpPerspectiveSuccessToRecluse) {
   g.AddDay(2);
   g.AddDeath("P1");
   g.AddClaim("P3", IMP);  // Recluse comes out and claims Good Imp.
-  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P3", IMP);
-  EXPECT_TRUE(g.IsValidWorld(r));
-  r = SolverRequestBuilder::FromCurrentRolesNot("P3", IMP);
-  EXPECT_FALSE(g.IsValidWorld(r));
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", BARON}, {"P3", IMP}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 
 TEST(Starpass, ImpPerspectiveFailMonkProtected) {
@@ -757,7 +755,10 @@ TEST(Starpass, ImpPerspectiveFailMonkProtected) {
   g.AddImpAction("P1", "P1");
   g.AddDay(2);
   g.AddClaimMonkAction("P7", "P1");
-  EXPECT_TRUE(g.IsValidWorld());
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", BARON}, {"P3", RECLUSE}, {"P4", SAINT},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 
 TEST(Starpass, ImpPerspectiveInvalidFailMonkProtectedOther) {
@@ -787,10 +788,10 @@ TEST(Starpass, ImpPerspectiveFailPoisoned) {
   g.AddImpAction("P1", "P1");
   g.AddDay(2);
   g.AddClaimMonkAction("P3", "P4");
-  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P2", POISONER);
-  EXPECT_TRUE(g.IsValidWorld(r));
-  r = SolverRequestBuilder::FromCurrentRolesNot("P2", POISONER);
-  EXPECT_FALSE(g.IsValidWorld(r));
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", POISONER}, {"P3", MONK}, {"P4", UNDERTAKER},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", VIRGIN}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 
 TEST(Starpass, PoisonerPerspectiveCatch) {
@@ -806,11 +807,10 @@ TEST(Starpass, PoisonerPerspectiveCatch) {
   g.AddDay(2);
   g.AddDeath("P4");
   g.AddNoStorytellerAnnouncement();
-  SolverRequest r =
-      SolverRequestBuilder::FromCurrentRoles({{"P1", IMP}, {"P4", IMP}});
-  EXPECT_TRUE(g.IsValidWorld(r));
-  r = SolverRequestBuilder::FromCurrentRolesNot("P1", IMP);
-  EXPECT_FALSE(g.IsValidWorld(r));
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", RAVENKEEPER}, {"P3", VIRGIN}, {"P4", IMP},
+       {"P5", SOLDIER}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 
 TEST(Starpass, InvalidPoisonerPerspectiveCatch) {
@@ -948,21 +948,23 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   g.AddAllClaims({MAYOR, SLAYER, FORTUNE_TELLER, RECLUSE, SAINT}, "P1");
   g.AddClaimFortuneTellerAction("P3", "P1", "P2", true);  // P1 is Imp
   g.AddNight(2);
-  g.AddImpAction("P1", "P2");
+  g.AddImpAction("P1", "P5");
   g.AddFortuneTellerAction("P3", "P3", "P4", true);
   g.AddDay(2);
-  g.AddDeath("P2");
+  g.AddDeath("P5");
   g.AddClaimFortuneTellerAction("P3", "P3", "P4", true);  // P4 is Recluse
   g.AddNight(3);
-  g.AddImpAction("P1", "P2");
+  g.AddImpAction("P1", "P5");
   g.AddFortuneTellerAction("P3", "P3", "P5", true);
   g.AddDay(3);
   g.AddClaimFortuneTellerAction("P3", "P3", "P5", true);  // P5 is red herring
   g.AddNight(4);
-  g.AddImpAction("P1", "P2");
-  g.AddFortuneTellerAction("P3", "P4", "P2", false);
+  g.AddImpAction("P1", "P1");  // Imp starpass to the Baron, P2
+  g.AddShownToken("P2", IMP);
+  g.AddFortuneTellerAction("P3", "P2", "P3", true);  // P2 now the Imp.
   g.AddDay(4);
-  g.AddClaimFortuneTellerAction("P3", "P4", "P2", false);  // Recluse no-proc.
+  g.AddDeath("P1");
+  g.AddClaimFortuneTellerAction("P3", "P2", "P3", true);
   EXPECT_TRUE(g.IsValidWorld());
 }
 
