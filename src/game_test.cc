@@ -705,6 +705,130 @@ TEST(NightDeaths, MayorBounce) {
   EXPECT_TRUE(g.IsValidWorld());
 }
 
+// TODO(olaola): remember to test FortuneTeller info after a starpass!
+
+TEST(Starpass, ImpPerspectiveSuccessToBaron) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, BUTLER, SAINT, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddNight(2);
+  g.AddImpAction("P1", "P1");
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddNoStorytellerAnnouncement();
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P2", IMP);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot("P2", IMP);
+  EXPECT_FALSE(g.IsValidWorld(r));
+}
+
+TEST(Starpass, ImpPerspectiveSuccessToRecluse) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, RECLUSE, SAINT, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddNight(2);
+  g.AddImpAction("P1", "P1");
+  g.AddDay(2);
+  g.AddDeath("P1");
+  g.AddClaim("P3", IMP);  // Recluse comes out and claims Good Imp.
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P3", IMP);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot("P3", IMP);
+  EXPECT_FALSE(g.IsValidWorld(r));
+}
+
+TEST(Starpass, ImpPerspectiveFailMonkProtected) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, RECLUSE, SAINT, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddNight(2);
+  g.AddImpAction("P1", "P1");
+  g.AddDay(2);
+  g.AddClaimMonkAction("P7", "P1");
+  EXPECT_TRUE(g.IsValidWorld());
+}
+
+TEST(Starpass, ImpPerspectiveInvalidFailMonkProtectedOther) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, RECLUSE, SAINT, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddNight(2);
+  g.AddImpAction("P1", "P1");
+  g.AddDay(2);
+  g.AddClaimMonkAction("P7", "P2");
+  EXPECT_FALSE(g.IsValidWorld());
+}
+
+TEST(Starpass, ImpPerspectiveFailPoisoned) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, MONK, UNDERTAKER, SOLDIER, SLAYER, VIRGIN}, "P1");
+  g.AddNight(2);
+  g.AddImpAction("P1", "P1");
+  g.AddDay(2);
+  g.AddClaimMonkAction("P3", "P4");
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P2", POISONER);
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot("P2", POISONER);
+  EXPECT_FALSE(g.IsValidWorld(r));
+}
+
+TEST(Starpass, PoisonerPerspectiveCatch) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);
+  g.AddPoisonerAction("P1", "P2");
+  g.AddDay(1);
+  g.AddAllClaims({MAYOR, RAVENKEEPER, VIRGIN, UNDERTAKER, SOLDIER}, "P1");
+  g.AddNight(2);
+  g.AddPoisonerAction("P1", "P2");
+  g.AddShownToken("P1", IMP);
+  g.AddDay(2);
+  g.AddDeath("P4");
+  g.AddNoStorytellerAnnouncement();
+  SolverRequest r =
+      SolverRequestBuilder::FromCurrentRoles({{"P1", IMP}, {"P4", IMP}});
+  EXPECT_TRUE(g.IsValidWorld(r));
+  r = SolverRequestBuilder::FromCurrentRolesNot("P1", IMP);
+  EXPECT_FALSE(g.IsValidWorld(r));
+}
+
+TEST(Starpass, InvalidPoisonerPerspectiveCatch) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);
+  g.AddPoisonerAction("P1", "P2");
+  g.AddDay(1);
+  g.AddAllClaims({MAYOR, RAVENKEEPER, VIRGIN, UNDERTAKER, SOLDIER}, "P1");
+  g.AddNight(2);
+  g.AddPoisonerAction("P1", "P2");
+  g.AddShownToken("P1", IMP);
+  g.AddDay(2);
+  g.AddDeath("P2");
+  g.AddNoStorytellerAnnouncement();
+  EXPECT_FALSE(g.IsValidWorld());
+}
+
 TEST(Ravenkeeper, SpyFalseRegisters) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(5));
   g.AddNight(1);
@@ -970,7 +1094,7 @@ TEST(GameEndConditions, ExecuteImpGameOver) {
   g.AddDeath("P1");
   g.AddVictory(GOOD);
   EXPECT_TRUE(g.IsValidWorld());
-  SolverRequest r = SolverRequestBuilder::FromCurrentRolesNot({{"P1", IMP}});
+  SolverRequest r = SolverRequestBuilder::FromCurrentRolesNot("P1", IMP);
   EXPECT_FALSE(g.IsValidWorld(r));
   r = SolverRequestBuilder()
       .AddCurrentRoles({{"P1", IMP}})

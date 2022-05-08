@@ -33,17 +33,18 @@ namespace botc {
 
 GameState SampleGame() {
   GameState g = GameState::FromPlayerPerspective(
-      {"P1", "P2", "P3", "P4", "P5"});
+      {"P1", "P2", "P3", "P4", "P5", "P6", "P7"});
   g.AddNight(1);
+  g.AddShownToken("P1", IMP);
+  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
   g.AddDay(1);
+  g.AddAllClaims(
+      {MAYOR, RAVENKEEPER, BUTLER, SAINT, SOLDIER, SLAYER, MONK}, "P1");
   g.AddNight(2);
+  g.AddImpAction("P1", "P1");
   g.AddDay(2);
   g.AddDeath("P1");
-  g.AddNomination("P2", "P3");
-  g.AddVote({"P4", "P5"}, "P3");
-  g.AddExecution("P3");
-  g.AddDeath("P3");
-  g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
+  g.AddNoStorytellerAnnouncement();
   return g;
 }
 

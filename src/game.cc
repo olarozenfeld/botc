@@ -320,6 +320,8 @@ void GameState::InitNightRoleVars() {
   }
   night_roles_.push_back(night_roles);
   AddRoleUniquenessConstraints(night_roles);
+  // There needs to be exactly one alive IMP (before game ends):
+  model_.AddEqualitySum(CollectAliveRoles(night_roles, {IMP}), 1);
   InitPoisonerVars();
   // InitButlerVars();  // TODO(olaola): figure out what to do with the Butler
   if (cur_time_.Count == 0) {
@@ -380,8 +382,6 @@ void GameState::AddRoleUniquenessConstraints(
     }
     model_.AddAtMostOne(player_is_role);
   }
-  // There needs to be exactly one alive IMP (before game ends):
-  model_.AddEqualitySum(CollectAliveRoles(player_roles, {IMP}), 1);
 }
 
 void GameState::AddBaronConstraints() {
@@ -727,56 +727,67 @@ void GameState::AddImpStarpassConstraints() {
   const auto& night_roles = night_roles_.back();
   const string night_name = absl::StrFormat("night_%d", cur_time_.Count);
   // TODO(olaola): add Storyteller perspective, to fix st_role vars.
-  // Starpass trigger: an alive, non-poisoned Imp picks themselves.
+  // Starpass trigger: an alive, non-poisoned, non-healthy-Monk protected Imp
+  // picks themselves.
   vector<BoolVar> player_starpass;
   for (int i = 0; i < num_players_; ++i) {
     if (is_alive_[i]) {
+      vector<BoolVar> reqs({night_roles[i][IMP], Not(poisoner_pick_.back()[i]),
+                            imp_pick_.back()[i]});
+      if (AlivePlayersClaiming(MONK).size() > 0) {
+        BoolVar poisoned_monk = CreatePoisonerPickedRoleVar(
+            MONK, cur_time_.Count, true);
+        BoolVar not_healthy_monk_protected = model_.CreateEquivalentVarOr(
+            {poisoned_monk, Not(monk_pick_.back()[i])},
+            absl::StrFormat("not_healthy_monk_protected_%s_%s", players_[i],
+                            night_name));
+        reqs.push_back(not_healthy_monk_protected);
+      }
       BoolVar starpass_i = model_.CreateEquivalentVarAnd(
-          {night_roles[i][IMP], Not(poisoner_pick_.back()[i]),
-           imp_pick_.back()[i]},
-          absl::StrFormat("%s_starpass_%s", players_[i], night_name));
+          reqs, absl::StrFormat("%s_starpass_%s", players_[i], night_name));
       player_starpass.push_back(starpass_i);
     }
   }
   BoolVar starpass = model_.CreateEquivalentVarSum(
-      player_starpass,
-      absl::StrFormat("starpass_triggers_%s", night_name));
-  vector<BoolVar> player_catch;
+      player_starpass, absl::StrFormat("starpass_triggers_%s", night_name));
+  vector<BoolVar> catch_cases;
   vector<BoolVar> eligible;
-  BoolVar nobody_eligible = model_.NewVar(
-      absl::StrFormat("nobody_eligible_for_starpass_%s", night_name));
   for (int i = 0; i < num_players_; ++i) {
-    // The Imp remains an Imp, dead or alive.
+    if (!is_alive_[i]) {
+      continue;
+    }
     const BoolVar& day_imp_i = day_roles[i][IMP];
     const BoolVar& night_imp_i = night_roles[i][IMP];
     model_.AddImplication(night_imp_i, day_imp_i);
-    if (is_alive_[i]) {
-      BoolVar catch_i = model_.CreateEquivalentVarAnd(
-          {Not(night_imp_i), day_imp_i},
-          absl::StrFormat("%s_catches_starpass_%s", players_[i], night_name));
-      BoolVar healthy_recluse_i = model_.CreateEquivalentVarAnd(
-          {night_roles[i][RECLUSE], Not(poisoner_pick_.back()[i])},
-          absl::StrFormat("healthy_recluse_%s_%s", players_[i], night_name));
-      vector<BoolVar> eligible_i;
-      // eligible_i <-> i is minion or healthy Recluse
-      for (Role role : {POISONER, SPY, SCARLET_WOMAN, BARON, RECLUSE}) {
-        const BoolVar& night_role_i = night_roles[i][role];
-        const BoolVar& day_role_i = day_roles[i][role];
-        const BoolVar& e = role == RECLUSE ? healthy_recluse_i : night_role_i;
-        eligible_i.push_back(e);
-        eligible.push_back(e);
-        model_.AddImplication(e, Not(nobody_eligible));
-        model_.AddImplicationEq(Not(catch_i), night_role_i, day_role_i);
-      }
-      model_.AddImplicationSum(catch_i, eligible_i, 1);
+    BoolVar catch_i = model_.CreateEquivalentVarAnd(
+        {Not(night_imp_i), day_imp_i},
+        absl::StrFormat("%s_catches_starpass_%s", players_[i], night_name));
+    catch_cases.push_back(catch_i);
+    if (deferred_constraints_[i] &&
+        ((perspective_ == STORYTELLER && st_shown_tokens_[i] == IMP) ||
+         (perspective_ == PLAYER && perspective_player_shown_token_ == IMP))) {
+      deferred_constraints_[i] = false;
+      model_.AddEquality(catch_i, true);
+    }
+    BoolVar healthy_recluse_i = AlivePlayersClaiming(RECLUSE).size() > 0 ?
+        model_.CreateEquivalentVarAnd(
+            {night_roles[i][RECLUSE], Not(poisoner_pick_.back()[i])},
+            absl::StrFormat("healthy_recluse_%s_%s", players_[i], night_name)) :
+        model_.FalseVar();
+    for (Role role : {POISONER, SPY, SCARLET_WOMAN, BARON, RECLUSE}) {
+      const BoolVar& night_role_i = night_roles[i][role];
+      const BoolVar& day_role_i = day_roles[i][role];
+      const BoolVar& e = role == RECLUSE ? healthy_recluse_i : night_role_i;
+      eligible.push_back(e);
+      model_.AddImplicationEq(Not(starpass), night_role_i, day_role_i);
+      model_.AddOr({Not(starpass), Not(e), day_role_i, day_imp_i});
     }
   }
-  model_.AddImplicationSum(nobody_eligible, eligible, 0);
-  // !starpass -> exactly zero catch
-  model_.AddImplicationSum(Not(starpass), player_catch, 0);
-  // starpass -> exactly one catches OR nobody eligible
-  player_catch.push_back(nobody_eligible);
-  model_.AddImplicationSum(starpass, player_catch, 1);
+  // starpass -> exactly one catches OR nobody was eligible:
+  catch_cases.push_back(model_.CreateEquivalentVarAnd(
+      Not(eligible),
+      absl::StrFormat("nobody_eligible_for_starpass_catch_%s", night_name)));
+  model_.AddImplicationSum(starpass, catch_cases, 1);
 }
 
 vector<BoolVar> GameState::CollectRolesForPlayer(
@@ -1582,21 +1593,21 @@ void GameState::AddShownToken(const string& player, Role role) {
   CHECK(!cur_time_.IsDay) << "Tokens are only shown at night";
   CHECK(cur_time_.Count == 1 || role == IMP)
       << "Tokens other than Imp are only shown on night 1";
-  const int p_index = PlayerIndex(player);
+  const int i = PlayerIndex(player);
   if (perspective_ == STORYTELLER) {
     // TODO(olaola): validate role change.
-    st_shown_tokens_[p_index] = role;
+    st_shown_tokens_[i] = role;
   } else {  // PLAYER
-    CHECK(perspective_player_ == kNoPlayer || perspective_player_ == p_index)
+    CHECK(perspective_player_ == kNoPlayer || perspective_player_ == i)
         << "Only " << player << " can be shown a token in player perspective";
-    perspective_player_ = p_index;  // Deducing the perspective player.
+    perspective_player_ = i;  // Deducing the perspective player.
     // TODO(olaola): validate role change.
     perspective_player_shown_token_ = role;
   }
   if (cur_time_.Count == 1) {
-    model_.AddEquality(shown_token_[p_index][role], true);
-  } else {  // role is IMP
-    // TODO(olaola): fill this case (starpass/SW proc occurred).
+    model_.AddEquality(shown_token_[i][role], true);
+  } else {  // role is Imp: Imp has died last day or tonight.
+    deferred_constraints_[i] = true;  // Defer until day.
   }
 }
 
@@ -1957,7 +1968,7 @@ void GameState::AddButlerAction(const string& player,
   if (perspective_ == STORYTELLER && st_player_roles_[i] == BUTLER) {
     st_butler_pick_ = target;
   }
-  deferred_constraints_[PlayerIndex(player)] = true;
+  deferred_constraints_[i] = true;
 }
 
 void GameState::AddRavenkeeperAction(const string& player, const string& pick,
@@ -2008,18 +2019,18 @@ void GameState::AddSlayerAction(const string& player,
 
 void GameState::ValidateRoleAction(const string& player, Role role) {
   const string role_name = Role_Name(role);
-  const int player_index = PlayerIndex(player);
+  const int i = PlayerIndex(player);
   CHECK(!cur_time_.IsDay) << role_name << " actions only occur at night";
-  CHECK(is_alive_[player_index]) << "Dead players don't get role actions";
+  CHECK(is_alive_[i]) << "Dead players don't get role actions";
   CHECK_NE(perspective_, OBSERVER)
       << absl::StrFormat("Observer cannot see %s actions", role_name);
   if (perspective_ == STORYTELLER) {
-    const Role st_player_role = st_shown_tokens_[player_index];
+    const Role st_player_role = st_shown_tokens_[i];
     CHECK_EQ(st_player_role, role)
         << absl::StrFormat("%s needs to be the %s, got %s", player,
                            role_name, Role_Name(st_player_role));
   } else {  // Player perspective.
-    CHECK_EQ(player_index, perspective_player_)
+    CHECK_EQ(i, perspective_player_)
         << absl::StrFormat("Only the %s or Storyteller perspective can see "
                            "%s actions", role_name, role_name);
     CHECK_EQ(perspective_player_shown_token_, role)
@@ -2027,8 +2038,16 @@ void GameState::ValidateRoleAction(const string& player, Role role) {
                            role_name,
                            Role_Name(perspective_player_shown_token_));
   }
-  CHECK(!night_action_used_[player_index]) << player << " already used ability";
-  night_action_used_[player_index] = true;
+  CHECK(!night_action_used_[i]) << player << " already used ability";
+  night_action_used_[i] = true;
+  const BoolVar & role_i = night_roles_.back()[i][role];
+  if (IsTownsfolkRole(role)) {
+    // This constraint is here for optimization only, it can actually be
+    // inferred from the shown tokens.
+    model_.AddOr({role_i, night_roles_.back()[i][DRUNK]});
+  } else {
+    model_.AddEquality(role_i, true);
+  }
 }
 
 void GameState::ValidateClaimRoleAction(const string& player, Role role) {
@@ -2072,6 +2091,7 @@ void GameState::AddImpAction(const string& player, const string& imp_action) {
     st_imp_pick_ = target;
   }
   model_.AddEquality(imp_pick_.back()[target], true);
+  deferred_constraints_[PlayerIndex(player)] = false;  // We know we are the Imp
 }
 
 void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
@@ -2517,8 +2537,11 @@ void GameState::FillWorldFromSolverResponse(
     for (Role role : kAllRoles) {
       if (SolutionBooleanValue(response, cur_role_vars[i][role])) {
         const string player = players_[i];
-        CHECK(current_roles->find(player) == current_roles->end())
-            << "Double current role assignment for player " << player;
+        const auto it = current_roles->find(player);
+        CHECK(it == current_roles->end())
+            << absl::StrFormat("Double current role assignment for player %s: "
+                               "found both %s and %s", player,
+                              Role_Name(it->second), Role_Name(role));
         (*current_roles)[player] = role;
       } else if (SolutionBooleanValue(response, night_roles_[0][i][role])) {
         const string player = players_[i];
