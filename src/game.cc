@@ -1066,6 +1066,19 @@ void GameState::AddExecution(const string& name) {
   execution_ = executee;
 }
 
+void GameState::AddNominationVoteExecution(const string& nominator,
+                                           const string& executee) {
+  vector<string> votes;
+  for (int i = 0; i < num_players_; ++i) {
+    if (is_alive_[i]) {
+      votes.push_back(players_[i]);
+    }
+  }
+  AddNomination(nominator, executee);
+  AddVote(votes, executee);
+  AddExecution(executee);
+}
+
 void GameState::AddDeath(const string& name) {
   log_.add_events()->set_death(name);
   BeforeEvent(Event::kDeath);

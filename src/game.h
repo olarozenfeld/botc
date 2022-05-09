@@ -83,6 +83,11 @@ class GameState {
   void AddVote(const Vote& vote);
   void AddVote(absl::Span<const string> votes, const string& on_the_block);
   void AddExecution(const string& name);
+  // Syntactic sugar for adding nomination, vote and execution in short form,
+  // for cases where Virgin doesn't proc (in Trouble Brewing actual votes rarely
+  // matter for the solve):
+  void AddNominationVoteExecution(const string& nominator,
+                                  const string& executee);
   void AddDeath(const string& name);
   void AddClaim(const Claim& claim);
   // Syntactic sugar for all role claims at once, which must always happen at

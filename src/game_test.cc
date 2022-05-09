@@ -95,9 +95,7 @@ TEST(Proto, ToAndFromProto) {
   g.AddClaimFortuneTellerAction("P12", "P11", "P13", true);
   g.AddClaimButlerAction("P5", "P4");
   g.AddSlayerAction("P6", "P1");  // Drunk
-  g.AddNomination("P9", "P11");
-  g.AddVote({"P10", "P11", "P12", "P1", "P2", "P3", "P5", "P7"}, "P11");
-  g.AddExecution("P11");
+  g.AddNominationVoteExecution("P9", "P11");
   g.AddDeath("P11");
   g.AddNight(2);
   g.AddPoisonerAction("P4", "P12");
@@ -534,9 +532,7 @@ TEST(Undertaker, RecluseFalseRegisters) {
   g.AddShownToken("P1", UNDERTAKER);
   g.AddDay(1);
   g.AddAllClaims({UNDERTAKER, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
-  g.AddNomination("P2", "P5");
-  g.AddVote({"P1", "P2", "P3"}, "P5");
-  g.AddExecution("P5");
+  g.AddNominationVoteExecution("P2", "P5");
   g.AddDeath("P5");
   g.AddNight(2);
   g.AddUndertakerInfo("P1", IMP);
@@ -570,9 +566,7 @@ TEST(Undertaker, HealthyUndertakerUseless) {
       {{"P1", BARON}, {"P2", IMP}, {"P3", CHEF}, {"P4", VIRGIN},
        {"P5", SAINT}, {"P6", SOLDIER}, {"P7", DRUNK}}});
   EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
-  g.AddNomination("P1", "P6");
-  g.AddVote({"P1", "P2", "P4"}, "P6");
-  g.AddExecution("P6");
+  g.AddNominationVoteExecution("P1", "P6");
   g.AddDeath("P6");
   g.AddNight(3);
   g.AddDay(3);
@@ -871,9 +865,7 @@ TEST(Ravenkeeper, RecluseFalseRegisters) {
   g.AddShownToken("P1", RAVENKEEPER);
   g.AddDay(1);
   g.AddAllClaims({RAVENKEEPER, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
-  g.AddNomination("P5", "P5");
-  g.AddVote({"P1", "P2", "P3"}, "P5");
-  g.AddExecution("P5");
+  g.AddNominationVoteExecution("P5", "P5");
   g.AddDeath("P5");
   g.AddNight(2);
   g.AddRavenkeeperAction("P1", "P5", IMP);
@@ -1018,34 +1010,26 @@ TEST(Empath, LearnsTrueInfo) {
   g.AddAllClaims({EMPATH, VIRGIN, SOLDIER, MAYOR, SLAYER, RAVENKEEPER,
                   SAINT, MAYOR, CHEF, RECLUSE}, "P1");
   g.AddClaimEmpathInfo("P1", 2);  // Both Spy and Recluse proc evil
-  g.AddNomination("P10", "P4");
-  g.AddVote({"P1", "P2", "P3", "P8", "P9"}, "P4");
-  g.AddExecution("P4");
+  g.AddNominationVoteExecution("P10", "P4");
   g.AddDeath("P4");
   g.AddNight(2);
   g.AddEmpathInfo("P1", 0);
   g.AddDay(2);
   g.AddDeath("P5");
   g.AddClaimEmpathInfo("P1", 0);  // Both Spy and Recluse proc good
-  g.AddNomination("P10", "P10");
-  g.AddVote({"P1", "P2", "P3", "P8"}, "P10");
-  g.AddExecution("P10");
+  g.AddNominationVoteExecution("P10", "P10");
   g.AddDeath("P10");
   g.AddNight(3);
   g.AddEmpathInfo("P1", 1);  // Spy Evil again
   g.AddDay(3);
   g.AddClaimEmpathInfo("P1", 1);
-  g.AddNomination("P1", "P9");
-  g.AddVote({"P1", "P2", "P3", "P8"}, "P9");
-  g.AddExecution("P9");
+  g.AddNominationVoteExecution("P1", "P9");
   g.AddDeath("P9");
   g.AddNight(4);
   g.AddEmpathInfo("P1", 1);  // Spy Good again, pings off Baron
   g.AddDay(4);
   g.AddClaimEmpathInfo("P1", 1);
-  g.AddNomination("P1", "P8");
-  g.AddVote({"P1", "P2", "P3"}, "P8");
-  g.AddExecution("P8");
+  g.AddNominationVoteExecution("P1", "P8");
   g.AddDeath("P8");
   g.AddNight(5);
   g.AddEmpathInfo("P1", 1);  // Spy Good, ping off Imp
@@ -1082,9 +1066,7 @@ TEST(ScarletWomanProc, ExecuteImp) {
   g.AddDay(1);
   g.AddAllClaims(
       {SOLDIER, MAYOR, CHEF, VIRGIN, FORTUNE_TELLER, SLAYER, MONK}, "P1");
-  g.AddNomination("P2", "P1");
-  g.AddVote({"P2", "P3", "P4", "P6"}, "P1");
-  g.AddExecution("P1");
+  g.AddNominationVoteExecution("P2", "P1");
   g.AddDeath("P1");
   g.AddNight(2);
   vector<unordered_map<string, Role>> expected_worlds({
@@ -1130,9 +1112,7 @@ TEST(GameEndConditions, ExecuteImpGameOver) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
   g.AddDay(1);
-  g.AddNomination("P1", "P1");
-  g.AddVote({"P2", "P3", "P4"}, "P1");
-  g.AddExecution("P1");
+  g.AddNominationVoteExecution("P1", "P1");
   g.AddDeath("P1");
   g.AddVictory(GOOD);
   EXPECT_TRUE(g.IsValidWorld());
@@ -1153,9 +1133,7 @@ TEST(GameEndConditions, InvalidExecuteImpOn4GameNotOver) {
   g.AddNight(2);
   g.AddDay(2);
   g.AddDeath("P1");
-  g.AddNomination("P2", "P3");
-  g.AddVote({"P4", "P5"}, "P3");
-  g.AddExecution("P3");
+  g.AddNominationVoteExecution("P2", "P3");
   g.AddDeath("P3");
   g.AddNight(3);  // The game continues, so P3 could not have been the Imp.
   SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P3", IMP);
@@ -1166,9 +1144,7 @@ TEST(GameEndConditions, InvalidExecuteImpNoScarletWomanGameNotOver) {
   GameState g = GameState::FromObserverPerspective(MakePlayers(5));
   g.AddNight(1);
   g.AddDay(1);
-  g.AddNomination("P1", "P1");
-  g.AddVote({"P2", "P3", "P4"}, "P1");
-  g.AddExecution("P1");
+  g.AddNominationVoteExecution("P1", "P1");
   g.AddDeath("P1");
   g.AddNight(2);  // The game continues, so P1 Imp -> SW in play.
   SolverRequestBuilder r =
@@ -1184,9 +1160,7 @@ TEST(GameEndConditions, ExecuteSaintGameOver) {
   g.AddShownToken("P1", SAINT);
   g.AddDay(1);
   g.AddAllClaims({SAINT, MAYOR, SOLDIER, SLAYER, RECLUSE}, "P1");
-  g.AddNomination("P2", "P1");
-  g.AddVote({"P2", "P3", "P4"}, "P1");
-  g.AddExecution("P1");
+  g.AddNominationVoteExecution("P2", "P1");
   g.AddDeath("P1");
   g.AddVictory(EVIL);
   EXPECT_TRUE(g.IsValidWorld());
@@ -1198,9 +1172,7 @@ TEST(GameEndConditions, ExecuteSaintGameNotOverPoisoner) {
   g.AddShownToken("P1", SAINT);
   g.AddDay(1);
   g.AddAllClaims({SAINT, MAYOR, SOLDIER, SLAYER, MONK}, "P1");
-  g.AddNomination("P2", "P1");
-  g.AddVote({"P2", "P3", "P4"}, "P1");
-  g.AddExecution("P1");
+  g.AddNominationVoteExecution("P2", "P1");
   g.AddDeath("P1");
   g.AddNight(2);
   EXPECT_TRUE(g.IsValidWorld());
@@ -1216,9 +1188,7 @@ TEST(GameEndConditions, MayorWin) {
   g.AddShownToken("P1", MAYOR);
   g.AddDay(1);
   g.AddAllClaims({MAYOR, SAINT, SOLDIER, SLAYER, RECLUSE}, "P1");
-  g.AddNomination("P2", "P5");
-  g.AddVote({"P3", "P4", "P5"}, "P5");
-  g.AddExecution("P5");
+  g.AddNominationVoteExecution("P2", "P5");
   g.AddDeath("P5");
   g.AddNight(2);
   g.AddDay(2);
@@ -1233,9 +1203,7 @@ TEST(GameEndConditions, PoisonedMayorNoWin) {
   g.AddShownToken("P1", MAYOR);
   g.AddDay(1);
   g.AddAllClaims({MAYOR, MONK, SOLDIER, SLAYER, RAVENKEEPER}, "P1");
-  g.AddNomination("P2", "P5");
-  g.AddVote({"P3", "P4", "P5"}, "P5");
-  g.AddExecution("P5");
+  g.AddNominationVoteExecution("P2", "P5");
   g.AddDeath("P5");
   g.AddNight(2);
   g.AddDay(2);
@@ -1313,9 +1281,7 @@ TEST(Spy, SpyPerspective) {
 
   g.AddClaimWasherwomanInfo("P1", "P2", "P3", MAYOR);
   g.AddClaimLibrarianInfo("P3", "P4", "P8", SAINT);  // Actually true info.
-  g.AddNomination("P3", "P9");
-  g.AddVote({"P3", "P4", "P5", "P6", "P7", "P9", "P10"}, "P9");
-  g.AddExecution("P9");
+  g.AddNominationVoteExecution("P3", "P9");
   g.AddDeath("P9");
   g.AddNight(2);
   spy_info.mutable_player_info(8)->set_shroud(true);  // P9 executed.
