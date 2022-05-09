@@ -263,6 +263,7 @@ class GameState {
   void ValidateClaimRoleAction(const string& player, Role role);
   void AddVirginProcConstraints(bool proc);
   void AddBaronConstraints();
+  void AddSpyInfoConstraints();
   void AddScarletWomanConstraints();
   void AddImpStarpassConstraints();
   void AddRoleUniquenessConstraints(
@@ -312,6 +313,7 @@ class GameState {
   int PlayerIndex(const string& name) const;
   vector<int> AliveNeighbors(int player) const;
   vector<int> AlivePlayersClaiming(Role role) const;
+  int FindPlayerShownRole(Role role) const;
 
   GameLog log_;  // Current state as a proto.
   Perspective perspective_;
@@ -344,6 +346,7 @@ class GameState {
   Role perspective_player_shown_token_;
   vector<bool> night_action_used_;  // x player, true when ability was used.
   vector<bool> deferred_constraints_;  // x player.
+  SpyInfo deferred_spy_info_;
   vector<bool> dead_vote_used_;  // x player, true when dead and voted.
 
   // These variables are only used in the storyteller perspective.

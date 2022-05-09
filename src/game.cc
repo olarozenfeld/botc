@@ -11,6 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// We use a few simplifying assumptions for the Trouble Brewing solver:
+// * An open strategy. This means everyone claims a role full round-robin day 1,
+//   and only Evil lies. Following that, every night role claims their info at
+//   the start of each day, following night death announcements.
+//   Note that this assumption is not limiting in final-3 solves, where it is
+//   assumed to be true as well; but the actual game would need to be modified
+//   as if the roles and info were claimed to begin with instead of only in
+//   final 3.
+// * The Spy cannot be poisoned. (It would always be strictly bad for Evil to
+//   poison the Spy, so we ignore this option for simplicity).
+// * Demon bluffs will not be shown to the Drunk. (TODO(olaola): implement)
 #include "src/game.h"
 
 #include <algorithm>
@@ -483,6 +494,7 @@ void GameState::BeforeEvent(Event::DetailsCase event_type) {
     next_event_maybe_death_ = false;
     if (event_type != Event::kDeath) {
       AddNoDeathConstraints();  // No night death, or Slayer shot failed.
+      AddSpyInfoConstraints();  // Evaluate possibly deferred Spy info.
     }
   }
   if (next_event_maybe_execution_) {
@@ -671,6 +683,7 @@ void GameState::InitDayRoleVars() {
   if (cur_time_.Count == 1) {
     // No possible starpass on night 1, roles propagate.
     PropagateAliveRoles(night_roles_.back(), day_roles, kAllRoles);
+    AddSpyInfoConstraints();  // Evaluate possibly deferred Spy info.
     return;
   }
   PropagateDeadRoles(night_roles_.back(), day_roles);
@@ -761,11 +774,14 @@ void GameState::AddImpStarpassConstraints() {
         {Not(night_imp_i), day_imp_i},
         absl::StrFormat("%s_catches_starpass_%s", players_[i], night_name));
     catch_cases.push_back(catch_i);
-    if (deferred_constraints_[i] &&
-        ((perspective_ == STORYTELLER && st_shown_tokens_[i] == IMP) ||
-         (perspective_ == PLAYER && perspective_player_shown_token_ == IMP))) {
-      deferred_constraints_[i] = false;
-      model_.AddEquality(catch_i, true);
+    if (perspective_ == STORYTELLER ||
+        (perspective_ == PLAYER && i == perspective_player_)) {
+      Role role = perspective_ == PLAYER ? perspective_player_shown_token_
+          : st_shown_tokens_[i];
+      // Day role corresponds to latest shown token.
+      if (!IsTownsfolkRole(role)) {
+        model_.AddEquality(day_roles[i][role], true);
+      }
     }
     BoolVar healthy_recluse_i = AlivePlayersClaiming(RECLUSE).size() > 0 ?
         model_.CreateEquivalentVarAnd(
@@ -786,6 +802,46 @@ void GameState::AddImpStarpassConstraints() {
       Not(eligible),
       absl::StrFormat("nobody_eligible_for_starpass_catch_%s", night_name)));
   model_.AddImplicationSum(starpass, catch_cases, 1);
+}
+
+int GameState::FindPlayerShownRole(Role role) const {
+  if (perspective_ == OBSERVER) {
+    return kNoPlayer;
+  }
+  if (perspective_ == PLAYER) {
+    return (perspective_player_shown_token_ == role ? perspective_player_ :
+            kNoPlayer);
+  }
+  for (int i = 0; i < num_players_; ++i) {
+    if (st_shown_tokens_[i] == role) {
+      return i;
+    }
+  }
+  return kNoPlayer;
+}
+
+void GameState::AddSpyInfoConstraints() {
+  // A lot of the Spy info is about knowing what other players know, which is
+  // not (yet) relevant to the solver. However, some tokens will greatly affect
+  // the Spy strategy. For example, if the Spy sees that the Slayer is poisoned,
+  // they may be able to determine which bluff will work better for the Imp.
+  // For now, we only encode the role info that the Spy receives, and ignore
+  // the rest.
+  const int spy = FindPlayerShownRole(SPY);
+  if (spy == kNoPlayer || !deferred_constraints_[spy]) {
+    return;
+  }
+  for (const auto& pi : deferred_spy_info_.player_info()) {
+    bool is_drunk = std::find(
+        pi.tokens().begin(), pi.tokens().end(), IS_DRUNK) != pi.tokens().end();
+    const Role role = is_drunk ? DRUNK : pi.role();
+    const int i = PlayerIndex(pi.player());
+    // We assume the Spy cannot be poisoned.
+    model_.AddEquality(day_roles_.back()[i][role], true);
+    CHECK_EQ(is_alive_[i], !pi.shroud())
+        << "Spy info has wrong shrouds on " << pi.player();
+  }
+  deferred_constraints_[spy] = false;
 }
 
 vector<BoolVar> GameState::CollectRolesForPlayer(
@@ -1102,6 +1158,7 @@ void GameState::AddDeath(const string& name) {
   is_alive_[death] = false;
   --num_alive_;
   next_event_maybe_victory_ = true;
+  AddSpyInfoConstraints();  // Evaluate possibly deferred Spy info.
 }
 
 void GameState::AddAllClaims(absl::Span<const Role> roles,
@@ -1297,11 +1354,9 @@ void GameState::AddClaimChefInfo(const string& player, int chef_info) {
                 absl::StrFormat("healthy_recluse_%s_%s", players_[i], time)));
       }
       model_.AddImplicationOr(reg_evil_i, evil_options_i);
-      BoolVar healthy_spy_i = model_.CreateEquivalentVarAnd(
-          {night_roles_[0][i][SPY], Not(poisoner_pick_[0][i])},
-          absl::StrFormat("healthy_spy_%s_%s", players_[i], time));
+      // We assume a Spy cannot be poisoned.
       model_.AddImplicationOr(Not(reg_evil_i),
-                              {Not(is_evil_[i]), healthy_spy_i});
+                              {Not(is_evil_[i]), night_roles_[0][i][SPY]});
     }
   }
   vector<BoolVar> evil_pairs;
@@ -1352,18 +1407,11 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
   const int ping1 = alive_neighbors[0], ping2 = alive_neighbors[1];
   const BoolVar& is_empath = day_roles_.back()[i][EMPATH];
   BoolVar poisoned_i = CreatePoisonedRoleVar(EMPATH, cur_time_.Count, true);
-  BoolVar poisoned_spy = CreatePoisonedRoleVar(SPY, cur_time_.Count, true);
   const bool possible_recluse = (claim_of_player_[ping1] == RECLUSE ||
                                  claim_of_player_[ping2] == RECLUSE);
   BoolVar poisoned_recluse = (possible_recluse ?
       model_.FalseVar() :
       CreatePoisonedRoleVar(RECLUSE, cur_time_.Count, true));
-  BoolVar ping1_healthy_spy = model_.CreateEquivalentVarAnd(
-      {day_roles_.back()[ping1][SPY], Not(poisoned_spy)},
-      absl::StrFormat("healthy_spy_%s_%s", players_[ping1], time));
-  BoolVar ping2_healthy_spy = model_.CreateEquivalentVarAnd(
-      {day_roles_.back()[ping2][SPY], Not(poisoned_spy)},
-      absl::StrFormat("healthy_spy_%s_%s", players_[ping2], time));
   BoolVar ping1_healthy_recluse = (claim_of_player_[ping1] != RECLUSE ?
       model_.FalseVar() :
       model_.CreateEquivalentVarAnd(
@@ -1374,12 +1422,13 @@ void GameState::AddClaimEmpathInfo(const string& player, int empath_info) {
       model_.CreateEquivalentVarAnd(
         {day_roles_.back()[ping2][RECLUSE], Not(poisoned_recluse)},
         absl::StrFormat("healthy_recluse_%s_%s", players_[ping2], time)));
+  // We assume a Spy cannot get poisoned.
   BoolVar ping1_regs_good = model_.CreateEquivalentVarOr(
-      {Not(is_evil_[ping1]), ping1_healthy_spy},
+      {Not(is_evil_[ping1]), day_roles_.back()[ping1][SPY]},
       absl::StrFormat("empath_%s_registers_%s_good_%s", player, players_[ping1],
                       time));
   BoolVar ping2_regs_good = model_.CreateEquivalentVarOr(
-      {Not(is_evil_[ping2]), ping2_healthy_spy},
+      {Not(is_evil_[ping2]), day_roles_.back()[ping2][SPY]},
       absl::StrFormat("empath_%s_registers_%s_good_%s", player, players_[ping2],
                       time));
   BoolVar ping1_regs_evil = model_.CreateEquivalentVarOr(
@@ -1609,9 +1658,7 @@ void GameState::AddShownToken(const string& player, Role role) {
   }
   if (cur_time_.Count == 1) {
     model_.AddEquality(shown_token_[i][role], true);
-  } else {  // role is Imp: Imp has died last day or tonight.
-    deferred_constraints_[i] = true;  // Defer until day.
-  }
+  }  // The shown Imp token constraints are evaluated next day.
 }
 
 Role GameState::ShownToken(const string& player) const {
@@ -1646,6 +1693,9 @@ void GameState::AddMinionInfo(const string& player, const string& demon,
   CHECK(IsMinionRole(shown_token))
       << "Player " << player
       << " needs to be shown a minion token in order to get minion info";
+  CHECK_EQ(minions.size(), num_minions_ - 1)
+      << absl::StrFormat("Expected %d fellow minions, got %d", num_minions_ - 1,
+                         minions.size());
   // Minion info is always correct in TB:
   const auto& assigned_roles = night_roles_[0];
   const int demon_index = PlayerIndex(demon);
@@ -2101,7 +2151,12 @@ void GameState::AddSpyInfo(const string& player, const SpyInfo& spy_info) {
   auto* si_pb = log_.add_events()->mutable_storyteller_interaction();
   si_pb->set_player(player);
   *(si_pb->mutable_role_action()->mutable_spy_info()) = spy_info;
+  ValidateRoleAction(player, SPY);
   BeforeEvent(Event::kStorytellerInteraction);
+  // We defer the constraint evaluation until the next day, because the Spy
+  // learns of the day roles which change during the night.
+  deferred_spy_info_ = spy_info;
+  deferred_constraints_[PlayerIndex(player)] = true;
 }
 
 void GameState::AddVirginProcConstraints(bool proc) {
@@ -2134,13 +2189,8 @@ void GameState::AddVirginProcConstraints(bool proc) {
     model_.AddOr({Not(virgin), poisoned, Not(proc_townsfolk)});
     return;
   }
-  // In case of a proc, we need to add the non-poisoned Spy option to the
-  // townsfolk cases:
-  townsfolk_cases.push_back(model_.CreateEquivalentVarAnd(
-      {day_roles_.back()[nomination.Nominator][SPY],
-       Not(CreatePoisonedRoleVar(SPY, cur_time_.Count, true))},
-      absl::StrFormat("healthy_spy_%s_%s", players_[nomination.Nominator],
-                      time)));
+  // In case of a proc, we need to add the Spy option to the townsfolk cases:
+  townsfolk_cases.push_back(day_roles_.back()[nomination.Nominator][SPY]);
   model_.AddEquivalenceSum(proc_townsfolk, townsfolk_cases);
   model_.AddAnd({virgin, Not(poisoned), proc_townsfolk});
 }

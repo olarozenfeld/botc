@@ -428,7 +428,7 @@ TEST(VotingProcess, ProgressiveVotes) {
   EXPECT_TRUE(g.UsedDeadVote("P1"));
   EXPECT_FALSE(g.UsedDeadVote("P4"));
   g.AddNomination("P3", "P3");
-  g.AddVote({"P4", "P3"}, "3");
+  g.AddVote({"P4", "P3"}, "P3");
   EXPECT_TRUE(g.UsedDeadVote("P4"));
 }
 
@@ -980,6 +980,34 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   EXPECT_TRUE(g.IsValidWorld());
 }
 
+TEST(Starpass, BaronPerspectiveThreeMinions) {
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(13));
+  g.AddNight(1);
+  g.AddShownToken("P4", BARON);
+  g.AddMinionInfo("P4", "P2", {"P1", "P13"});
+  g.AddDay(1);
+  g.AddAllClaims(
+      {WASHERWOMAN, MAYOR, BUTLER, RECLUSE, SOLDIER, SLAYER, UNDERTAKER,
+       SAINT, VIRGIN, RAVENKEEPER, CHEF, MONK, EMPATH}, "P1");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddDeath("P2");  // P13 caught a starpass.
+  g.AddNight(3);
+  g.AddShownToken("P4", IMP);  // We caught a starpass.
+  g.AddDay(3);
+  g.AddDeath("P13");
+  g.AddNight(4);
+  g.AddImpAction("P4", "P4");  // We starpass to P1.
+  g.AddDay(4);
+  g.AddDeath("P4");
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", IMP}, {"P2", IMP}, {"P3", BUTLER}, {"P4", IMP},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", UNDERTAKER},
+       {"P8", SAINT}, {"P9", VIRGIN}, {"P10", RAVENKEEPER},
+       {"P11", CHEF}, {"P12", MONK}, {"P13", IMP}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
+}
+
 TEST(Empath, LearnsTrueInfo) {
   GameState g = GameState::FromPlayerPerspective(MakePlayers(10));
   g.AddNight(1);
@@ -1221,6 +1249,87 @@ TEST(GameEndConditions, PoisonedMayorNoWin) {
   SolverRequest r =
       SolverRequestBuilder().AddRolesNotInPlay({POISONER}).Build();
   EXPECT_FALSE(g.IsValidWorld(r));
+}
+
+TEST(Spy, SpyPerspective) {
+  SpyInfo spy_info;
+  // We don't yet use any tokens except the role info and the IS_DRUNK token.
+  auto* pi = spy_info.add_player_info();
+  pi->set_player("P1");
+  pi->set_role(SPY);
+  pi = spy_info.add_player_info();
+  pi->set_player("P2");
+  pi->set_role(IMP);
+  pi = spy_info.add_player_info();
+  pi->set_player("P3");
+  pi->set_role(LIBRARIAN);
+  pi->add_tokens(IS_DRUNK);
+  pi = spy_info.add_player_info();
+  pi->set_player("P4");
+  pi->set_role(BARON);
+  pi = spy_info.add_player_info();
+  pi->set_player("P5");
+  pi->set_role(SOLDIER);
+  pi = spy_info.add_player_info();
+  pi->set_player("P6");
+  pi->set_role(SLAYER);
+  pi = spy_info.add_player_info();
+  pi->set_player("P7");
+  pi->set_role(UNDERTAKER);
+  pi = spy_info.add_player_info();
+  pi->set_player("P8");
+  pi->set_role(SAINT);
+  pi = spy_info.add_player_info();
+  pi->set_player("P9");
+  pi->set_role(VIRGIN);
+  pi = spy_info.add_player_info();
+  pi->set_player("P10");
+  pi->set_role(RAVENKEEPER);
+  pi = spy_info.add_player_info();
+  pi->set_player("P11");
+  pi->set_role(CHEF);
+  pi = spy_info.add_player_info();
+  pi->set_player("P12");
+  pi->set_role(MONK);
+  pi = spy_info.add_player_info();
+  pi->set_player("P13");
+  pi->set_role(SCARLET_WOMAN);
+  GameState g = GameState::FromPlayerPerspective(MakePlayers(13));
+  g.AddNight(1);
+  g.AddShownToken("P1", SPY);
+  g.AddMinionInfo("P1", "P2", {"P4", "P13"});
+  g.AddSpyInfo("P1", spy_info);
+  g.AddDay(1);
+  g.AddAllClaims(
+      {WASHERWOMAN, MAYOR, LIBRARIAN, RECLUSE, SOLDIER, SLAYER, UNDERTAKER,
+       SAINT, VIRGIN, RAVENKEEPER, CHEF, MONK, EMPATH}, "P1");
+
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", SPY}, {"P2", IMP}, {"P3", DRUNK}, {"P4", BARON},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", UNDERTAKER},
+       {"P8", SAINT}, {"P9", VIRGIN}, {"P10", RAVENKEEPER},
+       {"P11", CHEF}, {"P12", MONK}, {"P13", SCARLET_WOMAN}}});
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);  // Spy knows the world.
+
+  g.AddClaimWasherwomanInfo("P1", "P2", "P3", MAYOR);
+  g.AddClaimLibrarianInfo("P3", "P4", "P8", SAINT);  // Actually true info.
+  g.AddNomination("P3", "P9");
+  g.AddVote({"P3", "P4", "P5", "P6", "P7", "P9", "P10"}, "P9");
+  g.AddExecution("P9");
+  g.AddDeath("P9");
+  g.AddNight(2);
+  spy_info.mutable_player_info(8)->set_shroud(true);  // P9 executed.
+  spy_info.mutable_player_info(1)->set_shroud(true);  // P2 starpassed
+  spy_info.mutable_player_info(3)->set_role(IMP);  // P4 caught starpass
+  g.AddSpyInfo("P1", spy_info);
+  g.AddDay(2);
+  g.AddDeath("P2");
+  expected_worlds = {
+      {{"P1", SPY}, {"P2", IMP}, {"P3", DRUNK}, {"P4", IMP},
+       {"P5", SOLDIER}, {"P6", SLAYER}, {"P7", UNDERTAKER},
+       {"P8", SAINT}, {"P9", VIRGIN}, {"P10", RAVENKEEPER},
+       {"P11", CHEF}, {"P12", MONK}, {"P13", SCARLET_WOMAN}}};
+  EXPECT_WORLDS_EQ(g.Solve(), expected_worlds);
 }
 }  // namespace
 }  // namespace botc

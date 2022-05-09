@@ -97,28 +97,31 @@ message RavenkeeperAction {
 enum Token {
   TOKEN_UNSPECIFIED = 0;
   IS_DRUNK = 1;
-  POISONED = 2;
-  SPENT_VIRGIN = 3;
-  SPENT_SLAYER = 4;
-  BUTLER_MASTER = 5;
-  IMP_DEAD = 6;
-  LIBRARIAN_OUTSIDER = 7;
-  LIBRARIAN_WRONG = 8;
-  INVESTIGATOR_MINION = 9;
-  INVESTIGATOR_WRONG = 10;
-  WASHERWOMAN_TOWNSFOLK = 11;
-  WASHERWOMAN_WRONG = 12;
-  FORTUNE_TELLER_RED_HERRING = 13;
+  IS_POISONED = 2;
+  MONK_PROTECTED = 3;
+  SPENT_VIRGIN = 4;
+  SPENT_SLAYER = 5;
+  BUTLER_MASTER = 6;
+  IMP_DEAD = 7;
+  LIBRARIAN_OUTSIDER = 8;
+  LIBRARIAN_WRONG = 9;
+  INVESTIGATOR_MINION = 10;
+  INVESTIGATOR_WRONG = 11;
+  WASHERWOMAN_TOWNSFOLK = 12;
+  WASHERWOMAN_WRONG = 13;
+  FORTUNE_TELLER_RED_HERRING = 14;
   // For travelers, add GOOD and EVIL.
 }
 
 message SpyInfo {
-  message PlayerSpyInfo {
+  message PlayerInfo {
     string player = 1;
     Role role = 2;
-    repeated Token token = 3;
+    repeated Token tokens = 3;
+    bool shroud = 4;  // Indicating dead players.
   }
-  repeated PlayerSpyInfo player_info = 1;
+  repeated PlayerInfo player_info = 1;
+  repeated Role demon_bluffs = 2;
 }
 
 message RoleAction {
