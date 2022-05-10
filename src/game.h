@@ -32,11 +32,14 @@ const int kNoPlayer =  - 1;  // Used in place of player index.
 using operations_research::sat::CpSolverResponse;
 using operations_research::sat::CpModelBuilder;
 using operations_research::sat::BoolVar;
+using std::cout;
+using std::endl;
 using std::string;
 using std::vector;
 using std::map;
 using std::pair;
 using std::unordered_map;
+
 
 namespace internal {
 // In-game current time.
@@ -319,6 +322,11 @@ class GameState {
   vector<int> AliveNeighbors(int player) const;
   vector<int> AlivePlayersClaiming(Role role) const;
   int FindPlayerShownRole(Role role) const;
+  // Two implementations of Solve. The faster one will be eventually picked.
+  // SolveIteration calls sat::Solve in a loop while updating the model.
+  SolverResponse SolveIteration(const SolverRequest& request) const;
+  // SolveObserver goes over all feasible solutions and merges equivalent ones.
+  SolverResponse SolveObserver(const SolverRequest& request) const;
 
   GameLog log_;  // Current state as a proto.
   Perspective perspective_;

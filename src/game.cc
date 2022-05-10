@@ -2622,6 +2622,80 @@ void GameState::FillWorldFromSolverResponse(
 }
 
 SolverResponse GameState::Solve(const SolverRequest& request) const {
+  return SolveIteration(request);
+}
+
+SolverResponse GameState::SolveObserver(const SolverRequest& request) const {
+  for (int i = 0; i < num_players_; ++i) {
+    CHECK(!deferred_constraints_[i])
+        << "Some night roles' actions had their constraint evaluation deferred "
+        << "until public claim. Please call Solve after all public claims.";
+  }
+  CHECK(!request.stop_after_first_solution() || !request.solve_for_demon())
+      << "solve_for_demon option does not make sense with "
+      << "stop_after_first_solution.";
+  SolverResponse result;
+  // Making a copy to add assumptions.
+  CpModelBuilder cp_model(model_.Model());
+  cp_model.AddBoolAnd(CollectAssumptionLiterals(request.assumptions()));
+  CpSolverResponse response;
+  unordered_map<string, SolverResponse::World*> worlds_per_key;
+  int solutions = 0;
+  operations_research::sat::Model model;
+  SatParameters parameters;
+  parameters.set_enumerate_all_solutions(!request.stop_after_first_solution());
+  model.Add(NewSatParameters(parameters));
+  auto log_progress = [&](bool force) {
+    string progress = absl::StrFormat("Found %d solutions", solutions);
+    if (request.solve_for_demon()) {
+      absl::StrAppend(&progress, " ");
+      for (const auto& it : worlds_per_key) {
+        absl::StrAppend(&progress, absl::StrFormat("%s: %d ", it.first,
+                                                   it.second->count()));
+      }
+    }
+    if (force || solutions % 50 == 0) {
+      cout << progress << endl;
+    }
+  };
+  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
+    ++solutions;
+    SolverResponse::World cur_world;
+    FillWorldFromSolverResponse(r, &cur_world);
+    const int demon = SolutionAliveDemon(r);
+    const string key = (request.solve_for_demon() ?
+        (demon == kNoPlayer ? "<Dead Imp>" : players_[demon]) :
+        cur_world.DebugString());
+    SolverResponse::World *world;
+    const auto it = worlds_per_key.find(key);
+    if (it == worlds_per_key.end()) {
+      world = result.add_worlds();
+      *(world->mutable_current_roles()) = cur_world.current_roles();
+      *(world->mutable_starting_roles()) = cur_world.starting_roles();
+      worlds_per_key[key] = world;
+    } else {
+      world = it->second;
+    }
+    world->set_count(world->count() + 1);
+    // Add weight here, too.
+    log_progress(false);
+    if (!request.output_sat_model_solutions_dir().empty()) {
+      const string sat_filename = absl::StrFormat(
+          "%s/sat_solution_%d", request.output_sat_model_solutions_dir(),
+          solutions);
+      WriteSatSolutionToFile(r, &cp_model, sat_filename);
+      const string world_filename = absl::StrFormat(
+          "%s/world_%d.pbtxt", request.output_sat_model_solutions_dir(),
+          solutions);
+      WriteProtoToFile(world_filename, cur_world);
+    }
+  }));
+  SolveCpModel(cp_model.Build(), &model);
+  log_progress(true);
+  return result;
+}
+
+SolverResponse GameState::SolveIteration(const SolverRequest& request) const {
   for (int i = 0; i < num_players_; ++i) {
     CHECK(!deferred_constraints_[i])
         << "Some night roles' actions had their constraint evaluation deferred "
@@ -2693,7 +2767,7 @@ SolverResponse GameState::Solve(const SolverRequest& request) const {
             it.second->count());
         absl::StrAppend(&progress, counts);
       }
-      LOG(INFO) << progress;
+      cout << progress << endl;
     }
     if (!request.output_sat_model_solutions_dir().empty()) {
       const string sat_filename = absl::StrFormat(

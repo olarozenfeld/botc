@@ -65,6 +65,35 @@ void SimpleSat() {
   }
 }
 
+void SimpleSat2() {
+  CpModelBuilder cp_model;
+
+  BoolVar x = cp_model.NewBoolVar();
+  BoolVar y = cp_model.NewBoolVar();
+  cp_model.AddEquality(x, y);
+  BoolVar z = cp_model.NewBoolVar();
+  BoolVar t = cp_model.NewBoolVar();
+  cp_model.AddEquality(z, t);
+
+  // Search for x values in increasing order.
+//  cp_model.AddDecisionStrategy({x}, DecisionStrategyProto::CHOOSE_FIRST,
+//                               DecisionStrategyProto::SELECT_MIN_VALUE);
+
+  // Create a solver and solve with a fixed search.
+  Model model;
+  SatParameters parameters;
+//  parameters.set_search_branching(SatParameters::FIXED_SEARCH);
+  parameters.set_enumerate_all_solutions(true);
+//  parameters.set_instantiate_all_variables(false);
+  model.Add(NewSatParameters(parameters));
+  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
+    LOG(INFO) << "x=" << SolutionIntegerValue(r, x) << " y="
+              << SolutionIntegerValue(r, y) << " response: "
+              << r.DebugString();
+  }));
+  SolveCpModel(cp_model.Build(), &model);
+}
+
 void StepFunctionSampleSat() {
   // Create the CP-SAT model.
   CpModelBuilder cp_model;
@@ -126,7 +155,7 @@ void StepFunctionSampleSat() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::SimpleSat();
+  operations_research::sat::SimpleSat2();
 
   return EXIT_SUCCESS;
 }

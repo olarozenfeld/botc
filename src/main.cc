@@ -12,11 +12,16 @@
 // limitations under the License.
 
 #include <string>
+#include <chrono>  // NOLINT [build/c++11]
 
 #include "absl/flags/flag.h"
 #include "src/game.h"
 #include "src/util.h"
 
+using std::cout;
+using std::chrono::duration;
+using std::chrono::steady_clock;
+using std::endl;
 using std::string;
 
 // All files below are in text proto format.
@@ -69,11 +74,18 @@ void Run() {
     g.WriteModelVariablesToFile(output_model_vars);
   }
 
+  steady_clock::time_point begin = steady_clock::now();
   SolverResponse solution = g.Solve(request);
-  LOG(INFO) << "Solve response:\n" << solution.DebugString();
+  steady_clock::time_point end = steady_clock::now();
+
+  cout << "Solve time: " << duration<double>(end - begin).count() << "[s]\n";
+
   string output_solution = absl::GetFlag(FLAGS_output_solution);
   if (!output_solution.empty()) {
     WriteProtoToFile(output_solution, solution);
+    cout << "Solution written to " << output_solution << endl;
+  } else {
+    cout << "Solve response:\n" << solution.DebugString() << endl;
   }
 }
 }  // namespace botc
