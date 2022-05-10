@@ -21,7 +21,7 @@ using std::string;
 
 // All files below are in text proto format.
 ABSL_FLAG(string, game_log, "", "Game log file path.");
-ABSL_FLAG(bool, sample_game, "", "Use the sample game in code instead of "
+ABSL_FLAG(bool, sample_game, false, "Use the sample game in code instead of "
           "reading the game log from file.");
 ABSL_FLAG(string, solver_parameters, "", "Solver parameters file path.");
 ABSL_FLAG(string, output_model, "", "Optional SAT model output file.");
@@ -33,18 +33,17 @@ namespace botc {
 
 GameState SampleGame() {
   GameState g = GameState::FromPlayerPerspective(
-      {"P1", "P2", "P3", "P4", "P5", "P6", "P7"});
+      {"P1", "P2", "P3", "P4", "P5"});
   g.AddNight(1);
-  g.AddShownToken("P1", IMP);
-  g.AddDemonInfo("P1", {"P2"}, {EMPATH, MAYOR, FORTUNE_TELLER});
+  g.AddShownToken("P1", UNDERTAKER);
   g.AddDay(1);
-  g.AddAllClaims(
-      {MAYOR, RAVENKEEPER, BUTLER, SAINT, SOLDIER, SLAYER, MONK}, "P1");
+  g.AddAllClaims({UNDERTAKER, MAYOR, VIRGIN, SLAYER, RECLUSE}, "P1");
+  g.AddNominationVoteExecution("P2", "P5");
+  g.AddDeath("P5");
   g.AddNight(2);
-  g.AddImpAction("P1", "P1");
+  g.AddUndertakerInfo("P1", IMP);
   g.AddDay(2);
-  g.AddDeath("P1");
-  g.AddNoStorytellerAnnouncement();
+  g.AddClaimUndertakerInfo("P1", IMP);
   return g;
 }
 
