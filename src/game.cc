@@ -2712,7 +2712,7 @@ SolverResponse GameState::SolveIteration(const SolverRequest& request) const {
   SolverResponse result;
   // Making a copy to add assumptions repeatedly.
   CpModelBuilder model(model_.Model());
-  model.AddAssumptions(CollectAssumptionLiterals(request.assumptions()));
+  model.AddBoolAnd(CollectAssumptionLiterals(request.assumptions()));
   CpSolverResponse response;
   unordered_map<int, SolverResponse::World*> worlds_per_demon;
   const auto& cur_role_vars =
