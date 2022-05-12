@@ -63,6 +63,9 @@ message SolverRequest {
   // If present, directory to dump full SAT variable assignment files alongside
   // world assignments for each solution.
   string output_sat_model_solutions_dir = 5;
+
+  // Whether to use the observer solver instead of the iterative one.
+  bool use_observer_solver = 6;
 }
 
 message SolverResponse {

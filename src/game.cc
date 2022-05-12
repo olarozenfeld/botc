@@ -2622,7 +2622,8 @@ void GameState::FillWorldFromSolverResponse(
 }
 
 SolverResponse GameState::Solve(const SolverRequest& request) const {
-  return SolveIteration(request);
+  return (request.use_observer_solver() ? SolveObserver(request) :
+          SolveIteration(request));
 }
 
 SolverResponse GameState::SolveObserver(const SolverRequest& request) const {
