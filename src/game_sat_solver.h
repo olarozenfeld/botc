@@ -256,6 +256,21 @@ class SolverRequestBuilder {
   SolverRequestBuilder& AddRolesNotInPlay(absl::Span<const Role> roles);
   SolverRequestBuilder& AddGood(absl::Span<const string> players);
   SolverRequestBuilder& AddEvil(absl::Span<const string> players);
+  SolverRequestBuilder& AddPoisoned(const string& player,
+                                    int night,
+                                    bool is_poisoned) {
+    auto *p = request_.mutable_assumptions()->add_poisoned_players();
+    p->set_player(player);
+    p->set_night(night);
+    p->set_is_not(!is_poisoned);
+    return *this;
+  }
+  SolverRequestBuilder& AddPoisoned(const string& player, int night) {
+    return AddPoisoned(player, night, true);
+  }
+  SolverRequestBuilder& AddHealthy(const string& player, int night) {
+    return AddPoisoned(player, night, false);
+  }
 
   SolverRequest Build() const { return request_; }
 

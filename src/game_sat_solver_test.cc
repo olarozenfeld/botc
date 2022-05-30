@@ -1195,8 +1195,7 @@ TEST(GameEndConditions, ExecuteSaintGameNotOverPoisoner) {
   g.AddDeath("P1");
   EXPECT_TRUE(IsValidWorld(g));
   // Poisoner must have got us:
-  SolverRequest r =
-      SolverRequestBuilder().AddRolesNotInPlay({POISONER}).Build();
+  SolverRequest r = SolverRequestBuilder().AddHealthy("P1", 1).Build();
   EXPECT_FALSE(IsValidWorld(g, r));
 }
 
@@ -1232,8 +1231,7 @@ TEST(GameEndConditions, PoisonedMayorNoWin) {
   g.AddVictory(EVIL);
   EXPECT_TRUE(IsValidWorld(g));
   // Poisoner must have got us:
-  SolverRequest r =
-      SolverRequestBuilder().AddRolesNotInPlay({POISONER}).Build();
+  SolverRequest r = SolverRequestBuilder().AddHealthy("P1", 2).Build();
   EXPECT_FALSE(IsValidWorld(g, r));
 }
 

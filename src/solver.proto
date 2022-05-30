@@ -24,6 +24,11 @@ message SolverRequest {
       Role role = 2;
       bool is_not = 3;  // True iff player does not have role.
     }
+    message Poisoned {
+      string player = 1;
+      int32 night = 2;
+      bool is_not = 3;
+    }
     // Starting assignment.
     repeated PlayerRole starting_roles = 1;
 
@@ -42,8 +47,10 @@ message SolverRequest {
     // Players assumed good.
     repeated string is_good = 6;
 
-    // TODO(olaola): if needed, we can expose a lot of other variables such as
-    // "Shamyrra was poisoned day 2" or "Joanos caught a starpass night 3".
+    // Who was poisoned when.
+    repeated Poisoned poisoned_players = 7;
+
+    // TODO(olaola): if needed, we can expose other variables such as Imp picks.
   }
   // Assumptions to add into the model before solving.
   Assumptions assumptions = 1;

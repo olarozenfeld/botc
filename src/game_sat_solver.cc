@@ -430,15 +430,14 @@ BoolVar GameSatSolver::AliveRoleVar(Role role, const Time& time) {
 BoolVar GameSatSolver::PoisonedVar(int player, const Time& time) {
   Time night = time.is_day ? time - 1 : time;
   BoolVar picked = PoisonerPickVar(player, time);
-  const auto& night_deaths = g_.Deaths(night);
+  const auto night_deaths = g_.Deaths(night);
   if (night_deaths.empty()) {
     return picked;
   }
   // At most one night death in TB:
   return model_.NewEquivalentVarAnd(
       {Not(RoleVar(night_deaths[0], POISONER, night)), picked},
-      absl::StrFormat(
-          "poisoned_%s_%s", g_.PlayerName(player), night));
+      absl::StrFormat("poisoned_%s_%s", g_.PlayerName(player), night));
 }
 
 void GameSatSolver::AddRoleSetupConstraints() {
@@ -1321,6 +1320,15 @@ vector<BoolVar> GameSatSolver::CollectAssumptionLiterals(
   }
   for (const string& player : assumptions.is_good()) {
     assumption_literals.push_back(Not(StartingEvilVar(g_.PlayerIndex(player))));
+  }
+  for (const auto& p : assumptions.poisoned_players()) {
+    const int i = g_.PlayerIndex(p.player());
+    const Time time = Time::Night(p.night());
+    if (model_.FindVar(PoisonerPickVarName(i, time)) == nullptr && p.is_not()) {
+      continue;  // This assumption does not change anything.
+    }
+    BoolVar v = PoisonedVar(i, time);
+    assumption_literals.push_back(p.is_not() ? Not(v) : v);
   }
   return assumption_literals;
 }
