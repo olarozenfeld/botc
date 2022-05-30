@@ -604,7 +604,7 @@ TEST(NightDeaths, ImpDeducesSoberMonk) {
   g.AddDay(2);
   g.AddClaim("P7", g.NewMonkAction("P6"));
   SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P7", MONK);
-  EXPECT_EQ(Solve(g, r).worlds_size(), Solve(g).worlds_size());
+  EXPECT_WORLDS_EQ(Solve(g, r), CopyWorlds(Solve(g)));
 }
 
 TEST(NightDeaths, ImpDeducesDrunkSoldier) {
@@ -1053,7 +1053,7 @@ TEST(Soldier, InvalidImpKillsHealthySoldier) {
   const SolverRequest& r =
       SolverRequestBuilder::FromCurrentRoles("P5", SOLDIER);
   // P5 is SOLDIER in all worlds:
-  EXPECT_EQ(Solve(g, r).worlds_size(), Solve(g).worlds_size());
+  EXPECT_WORLDS_EQ(Solve(g, r), CopyWorlds(Solve(g)));
   g.AddNight(2);
   g.AddDay(2);
   g.AddNightDeath("P5");
@@ -1071,7 +1071,7 @@ TEST(Monk, InvalidImpKillsHealthyMonkProtectedTarget) {
   const SolverRequest& r =
       SolverRequestBuilder::FromCurrentRoles("P5", MONK);
   // P5 is MONK in all worlds:
-  EXPECT_EQ(Solve(g, r).worlds_size(), Solve(g).worlds_size());
+  EXPECT_WORLDS_EQ(Solve(g, r), CopyWorlds(Solve(g)));
   g.AddNight(2);
   g.AddDay(2);
   g.AddNightDeath("P1");
