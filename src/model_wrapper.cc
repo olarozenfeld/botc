@@ -75,17 +75,34 @@ string OrConstraintName(absl::Span<const BoolVar> literals) {
 }
 }  // namespace
 
-void ModelWrapper::WriteToFile(const string& filename) const {
-  WriteProtoToFile(filename, model_.Build());
+void ModelWrapper::WriteToFile(const path& filename) const {
+  WriteProtoToFile(model_.Build(), filename);
 }
 
-void ModelWrapper::WriteVariablesToFile(const string& filename) const {
+void ModelWrapper::WriteVariablesToFile(const path& filename) const {
   const auto& model_pb = model_.Build();
   ofstream f;
   f.open(filename);
     for (int i = 0; i < model_pb.variables_size(); ++i) {
       f << i << ": " << VarDebugString(model_pb, i) << "\n";
     }
+  f.close();
+}
+
+void ModelWrapper::WriteSatSolutionToFile(const CpSolverResponse& response,
+                                          const path& filename) {
+  // We print the model variables sorted by name.
+  vector<BoolVar> vars;
+  for (const auto& it : var_cache_) {
+    vars.push_back(it.second);
+  }
+  std::sort(vars.begin(), vars.end(),
+      [](const BoolVar& l, const BoolVar& r) { return l.Name() < r.Name(); });
+  ofstream f;
+  f.open(filename);
+  for (const BoolVar& v : vars) {
+    f << v.Name() << ": " << SolutionIntegerValue(response, v) << "\n";
+  }
   f.close();
 }
 
@@ -255,10 +272,13 @@ void ModelWrapper::AddContradiction(const string& reason) {
         .WithName(absl::StrCat("Contradiction: ", reason));
 }
 
-BoolVar ModelWrapper::CreateEquivalentVarAnd(
+BoolVar ModelWrapper::NewEquivalentVarAnd(
     absl::Span<const BoolVar> literals, const string& name) {
   if (literals.size() == 0) {
     return model_.FalseVar();
+  }
+  if (literals.size() == 1) {
+    return literals[0];  // Optimization: don't create a new variable.
   }
   const string key = ConstraintName("^", literals);
   const auto it = var_cache_.find(key);
@@ -271,10 +291,13 @@ BoolVar ModelWrapper::CreateEquivalentVarAnd(
   return var;
 }
 
-BoolVar ModelWrapper::CreateEquivalentVarOr(
+BoolVar ModelWrapper::NewEquivalentVarOr(
     absl::Span<const BoolVar> literals, const string& name) {
   if (literals.size() == 0) {
     return model_.FalseVar();
+  }
+  if (literals.size() == 1) {
+    return literals[0];  // Optimization: don't create a new variable.
   }
   const string key = ConstraintName("V", literals);
   const auto it = var_cache_.find(key);
@@ -287,10 +310,13 @@ BoolVar ModelWrapper::CreateEquivalentVarOr(
   return var;
 }
 
-BoolVar ModelWrapper::CreateEquivalentVarSum(
+BoolVar ModelWrapper::NewEquivalentVarSum(
     absl::Span<const BoolVar> literals, const string& name) {
   if (literals.size() == 0) {
     return model_.FalseVar();
+  }
+  if (literals.size() == 1) {
+    return literals[0];  // Optimization: don't create a new variable.
   }
   const string key = ConstraintName("+", literals);
   const auto it = var_cache_.find(key);
@@ -303,10 +329,17 @@ BoolVar ModelWrapper::CreateEquivalentVarSum(
   return var;
 }
 
-BoolVar ModelWrapper::CreateEquivalentVarSumEq(
+BoolVar ModelWrapper::NewEquivalentVarSumEq(
     absl::Span<const BoolVar> literals, int sum, const string& name) {
   if (literals.size() == 0) {
     return model_.FalseVar();
+  }
+  if (literals.size() == 1) {
+    switch (sum) {
+      case 0: return Not(literals[0]);
+      case 1: return literals[0];
+      default: model_.FalseVar();
+    }
   }
   const string key = absl::StrFormat(
       "%d=%s", sum, ConstraintName("+", literals));

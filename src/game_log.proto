@@ -15,8 +15,31 @@ syntax = "proto3";
 
 package botc;
 
+enum Script {
+  SCRIPT_UNSPECIFIED = 0;
+  TROUBLE_BREWING = 1;
+  SECTS_AND_VIOLETS = 2;
+  BAD_MOON_RISING = 3;
+}
+
+enum Team {
+  TEAM_UNSPECIFIED = 0;
+  GOOD = 1;
+  EVIL = 2;
+}
+
+enum RoleType {
+  ROLE_TYPE_UNSPECIFIED = 0;
+  DEMON = 1;
+  MINION = 2;
+  TOWNSFOLK = 3;
+  OUTSIDER = 4;
+  TRAVELER = 5;
+}
+
 enum Role {
   ROLE_UNSPECIFIED = 0;
+
   // Trouble Brewing roles
   // Townsfolk
   WASHERWOMAN = 1;
@@ -56,44 +79,23 @@ enum Perspective {
 
 // The setup contains all the grimoire tokens that the storyteller must assign
 // when creating the game, before start. In player and observer perspectives,
-// it will only contain public information.
+// it will only contain public information, such as the Traveler roles.
 message Setup {
-  // The player circle, in order.
-  // We use strings for player names, because we're optimizing for
-  // readability of the text protos over everything else, since this is our
-  // chosen game description format.
-  repeated string players = 1;
-
   // The outsider/minion counts can be inferred from the number of players.
   // TODO: Support travelers.
 
   // The actual roles assigned by the Storyteller. Only visible in the ST
   // perspective. E.g. the Drunk will appear here as DRUNK.
-  map<string, Role> player_roles = 2;
+  map<string, Role> player_roles = 1;
 
   // Special startup fields for particular roles.
-  string red_herring = 3; // The Fortune Teller's red herring.
+  string red_herring = 2; // The Fortune Teller's red herring.
+
+  // For example, the Puzzlemaster drunk will appear here, as well as the
+  // Townsfolk turned evil by the Bounty Hunter.
 }
 
-// Generalizes the TB top-3 info roles that get two pings and a role.
-message LearnRoleInfo {
-  string ping1 = 1;
-  string ping2 = 2;
-  Role role = 3;
-}
-
-message FortuneTellerAction {
-  string pick1 = 1;
-  string pick2 = 2;
-  bool yes = 3;
-}
-
-message RavenkeeperAction {
-  string pick = 1;
-  Role role = 2;
-}
-
-// The Spy info is player roles plus tokens.
+// The Spy/Widow info is player roles plus tokens.
 enum Token {
   TOKEN_UNSPECIFIED = 0;
   IS_DRUNK = 1;
@@ -113,7 +115,7 @@ enum Token {
   // For travelers, add GOOD and EVIL.
 }
 
-message SpyInfo {
+message GrimoireInfo {
   message PlayerInfo {
     string player = 1;
     Role role = 2;
@@ -125,31 +127,14 @@ message SpyInfo {
 }
 
 message RoleAction {
-  oneof details {
-    LearnRoleInfo washerwoman_info = 1;
-    LearnRoleInfo librarian_info = 2;
-    LearnRoleInfo investigator_info = 3;
-    int32 chef_info = 4;
-    int32 empath_info = 5;
-    FortuneTellerAction fortuneteller_action = 6;
-    string monk_action = 7;
-    string butler_action = 8;
-    RavenkeeperAction ravenkeeper_action = 9;
-    Role undertaker_info = 10;
-    string slayer_action = 11;
-    string poisoner_action = 12;
-    string imp_action = 13;
-    SpyInfo spy_info = 14;
-  }
-}
-
-// The claims are the public information of player roles. They do not
-// necessarily correspond to actual roles (people lie!)
-message Claim {
-  string player = 1;
-  Role role = 2;
-  // The info relates to the last storyteller interaction.
-  RoleAction info = 3;
+  Role acting = 1;  // The role whose ability triggered the action.
+  // Generic fields used by many roles in various scripts.
+  repeated string players = 2;  // Picks or pings.
+  repeated Role roles = 3;  // Learned or chosen roles.
+  int32 number = 4;  // Learned or chosen number.
+  bool yes = 5;  // Boolean answer (e.g. Fortune Teller, Artist).
+  // Custom fields used by particular roles.
+  GrimoireInfo grimoire_info = 6;  // Spy and Widow.
 }
 
 message MinionInfo {
@@ -162,32 +147,88 @@ message DemonInfo {
   repeated Role bluffs = 2;
 }
 
-// These events will only appear in the ST perspective of the game. They are
-// what actually happened, as opposed to claims.
-message StorytellerInteraction {
-  string player = 1;
-  oneof details {
-    Role shown_token = 2;
-    MinionInfo minion_info = 3;
-    DemonInfo demon_info = 4;
-    RoleAction role_action = 5;
-  }
-}
-
 message Nomination {
   string nominator = 1;
   string nominee = 2;
 }
 
 message Vote {
-  repeated string votes = 1;  // Who raised their hand, in order.
-  string on_the_block = 2;  // Who ends up on the block as a result.
+  // The vote can be specified in a short form, or a detailed form.
+  // The number of people who raised their hand. This is the short form.
+  int32 num_votes = 1;
+  // The players who raised their hand, in order. This is the only way to
+  // specify that a player used their dead vote.
+  repeated string votes = 2;
+  string on_the_block = 3;  // Who ended up on the block as a result.
 }
 
-enum Team {
-  TEAM_UNSPECIFIED = 0;
-  GOOD = 1;
-  EVIL = 2;
+// These events will only appear either in the ST perspective of the game, or
+// in the perspective of the participating player. They are what actually
+// happened, as opposed to claims. Exceptions: public Storyteller interactions,
+// such as the Juggler, the Slayer, or the Gossip.
+message StorytellerInteraction {
+  string player = 1;
+  oneof details {
+    Role shown_token = 2;  // Player is shown their current role.
+    Team shown_alignment = 3;  // Player is shown their current alignment.
+    MinionInfo minion_info = 4;  // Given to a minion night 1.
+    DemonInfo demon_info = 5;  // Given to a demon night 1.
+    // An instance of a role ability triggered, for example a Slayer using the
+    // Slayer shot, an Imp picking their target, or a Librarian learning info.
+    RoleAction role_action = 6;
+    // An instance of a different player's role ability trigerring a Storyteller
+    // interaction with the current player. There are no examples of this in
+    // Trouble Brewing, but in Sects & Violets this could be, for example, "The
+    // Cerenouvous has made you mad about being the Clockmaker", or in Bad Moon
+    // Rising, "You wake up to learn that Katelyn is the Exorcist".
+    // Note that this will only be used in case where there isn't already an
+    // interaction for the given effect; for example, if another player's
+    // ability effect changes your role, this will be reflected by the
+    // shown_token or shown_alignment interaction instead (e.g. Imp starpass, or
+    // Goon being targeted, respectively).
+    RoleAction role_action_effect = 7;
+  }
+}
+
+// The claims are how people inform each other of player roles, actions and
+// effects. They are not necessarily true (people lie!)
+message Claim {
+  string player = 1;  // The player making the claim.
+
+  // Optional field to indicate when the claimed event took place. If
+  // omitted, latest applicable time is assumed, usually last night.
+  // For example, you can use this field to claim a role change: if you're a
+  // Recluse catching an Imp starpass in final 3, or have been Pit Hag turned,
+  // Snakecharmed, etc.
+  oneof time {
+    int32 day = 2;
+    int32 night = 3;
+  }
+
+  // A claim is either a role claim, an action claim, or an effect claim.
+  oneof details {
+    // The role player is claiming to have had starting from time.
+    Role role = 4;
+    // The info or action that is claimed to have been triggered by the player's
+    // ability.
+    RoleAction role_action = 5;
+    // An effect someone else's ability is claimed to have had on the player.
+    // For example, "Last night the Cerenovous made me mad about being the
+    // Clockmaker".
+    RoleAction role_effect = 6;
+    // The Goon says "I was turned Evil night 2, and now I'm Good again!"
+    Team alignment = 7;
+  }
+
+  // By default, we always assume that later contradicting claims supercede
+  // earlier ones (e.g. someone claims Mayor after claiming Chef will be
+  // interpreted as "I was lying earlier, ignore everything I said before as the
+  // Chef"). However, in rare cases we need to explicitly set this field.
+  // Example: “I was lying earlier, I was actually turned into the Sweetheart
+  // night 3, not the Klutz”, vs "On night 3, I was first turned into the Klutz,
+  // but then right away into the Sweetheart". In this example, if we want to
+  // make the latter claim, we need to set this field to true.
+  bool add_to_previous_claims = 8;
 }
 
 // The game is an ordered stream of events.
@@ -199,27 +240,21 @@ message Event {
     Nomination nomination = 4;
     Vote vote = 5;
     string execution = 6;
-    string death = 7; // Storyteller announces that the player is dead.
-    // (Night deaths become public info on start of next day).
-    Claim claim = 8;
-    Team victory = 9; // Game end. Must be the last event, if present.
-    // This event may be optionally used to indicate that there was no event
-    // following the previous one that might have been relevant. For example,
-    // after the start of a day, this would indicate there was *not* a night
-    // death announcement (rather than we are unsure yet at the current game
-    // state whether a death will follow or not). These are the cases where
-    // this might be used in TB:
-    // * Start of day -> signal no night deaths
-    // * Death -> signal game didn't end
-    // * Nomination -> signal no execution (no Virgin proc)
-    // In other scripts, this might also get used after execution to signal no
-    // death, etc.
-    bool no_storyteller_announcement = 10;
+    // Storyteller announces that the player is dead. This can be due to
+    // execution, Slayer shot, Tinker, Witch, or any other day-time effect.
+    string death = 7;
+    // Storyteller announces that the player died in the night. This can be due
+    // to a demon kill, or any other night-time death effect.
+    string night_death = 8;
+    Claim claim = 9;
+    Team victory = 10; // Game end. Must be the last event, if present.
   }
 }
 
 message GameLog {
-  Perspective perspective = 1;
-  Setup setup = 2;
-  repeated Event events = 3;
+  Perspective perspective = 1; // Whose perspective the game is from.
+  Script script = 2;  // Mandatory: the game script.
+  repeated string players = 3;  // The player circle, in order.
+  Setup setup = 4;  // Usually only visible in Storyteller perspective.
+  repeated Event events = 5; // Everything that happened in the game, in order.
 }

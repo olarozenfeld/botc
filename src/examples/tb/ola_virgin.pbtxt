@@ -1,0 +1,263 @@
+# This is an account of a real game.
+perspective: PLAYER
+script: TROUBLE_BREWING
+players: "Ola"
+players: "Daniel"
+players: "Anna"
+players: "Nicole"
+players: "Jon"
+players: "Alyssa"
+players: "Jeremy"
+players: "Sharon"
+players: "Rachel"
+events {
+  night: 1
+}
+events {
+  storyteller_interaction {
+    player: "Ola"
+    shown_token: VIRGIN
+  }
+}
+events {
+  day: 1
+}
+# I claimed Virgin to everyone, trying to find a top 4.
+events {
+  claim {
+    player: "Ola"
+    role: VIRGIN
+  }
+}
+# Rachel obliged, and came out with her info before nominating me.
+events {
+  claim {
+    player: "Rachel"
+    role: INVESTIGATOR
+  }
+}
+events {
+  claim {
+    player: "Rachel"
+    role_action {
+      acting: INVESTIGATOR
+      players: "Ola"
+      players: "Alyssa"
+      roles: POISONER
+    }
+  }
+}
+events {
+  nomination {
+    nominator: "Rachel"
+    nominee: "Ola"
+  }
+}
+# Virgin proc.
+events {
+  execution: "Rachel"
+}
+events {
+  death: "Rachel"
+}
+events {
+  night: 2
+}
+events {
+  day: 2
+}
+events {
+  night_death: "Nicole"
+}
+events {
+  claim {
+    player: "Nicole"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Nicole"
+    role_action {
+      acting: MONK
+      players: "Ola"
+    }
+  }
+}
+# Everyone hardclaimed to me after this.
+events {
+  claim {
+    player: "Daniel"
+    role: CHEF
+  }
+}
+events {
+  claim {
+    player: "Anna"
+    role: RAVENKEEPER
+  }
+}
+events {
+  claim {
+    player: "Nicole"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Jon"
+    role: SLAYER
+  }
+}
+events {
+  claim {
+    player: "Alyssa"
+    role: EMPATH
+  }
+}
+events {
+  claim {
+    player: "Jeremy"
+    role: UNDERTAKER
+  }
+}
+events {
+  claim {
+    player: "Sharon"
+    role: SAINT
+  }
+}
+events {
+  claim {
+    player: "Daniel"
+    night: 1
+    role_action {
+      acting: CHEF
+      number: 0
+    }
+  }
+}
+events {
+  claim {
+    player: "Jeremy"
+    role_action {
+      acting: UNDERTAKER
+      roles: INVESTIGATOR
+    }
+  }
+}
+events {
+  claim {
+    player: "Alyssa"
+    night: 1
+    role_action {
+      acting: EMPATH
+      number: 1
+    }
+  }
+}
+events {
+  claim {
+    player: "Alyssa"
+    night: 2
+    role_action {
+      acting: EMPATH
+      number: 1
+    }
+  }
+}
+events {
+  nomination {
+    nominator: "Jeremy"
+    nominee: "Daniel"
+  }
+}
+events {
+  vote {
+    votes: "Daniel"
+    votes: "Jeremy"
+    votes: "Ola"
+    votes: "Rachel"
+    on_the_block: "Daniel"
+  }
+}
+events {
+  execution: "Daniel"
+}
+events {
+  death: "Daniel"
+}
+events {
+  night: 3
+}
+events {
+  day: 3
+}
+events {
+  night_death: "Ola"
+}
+events {
+  claim {
+    player: "Jeremy"
+    role_action {
+      acting: UNDERTAKER
+      roles: CHEF
+    }
+  }
+}
+events {
+  claim {
+    player: "Alyssa"
+    role_action {
+      acting: EMPATH
+      number: 1
+    }
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Jon"
+    role_action {
+      acting: SLAYER
+      players: "Anna"
+    }
+  }
+}
+events {
+  nomination {
+    nominator: "Alyssa"
+    nominee: "Alyssa"
+  }
+}
+events {
+  vote {
+    votes: "Jeremy"
+    votes: "Jon"
+    votes: "Anna"
+    on_the_block: "Alyssa"
+  }
+}
+events {
+  execution: "Alyssa"
+}
+events {
+  death: "Alyssa"
+}
+events {
+  night: 4
+}
+events {
+  day: 4
+}
+events {
+  night_death: "Sharon"
+}
+events {
+  claim {
+    player: "Jeremy"
+    role_action {
+      acting: UNDERTAKER
+      roles: POISONER
+    }
+  }
+}

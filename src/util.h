@@ -14,16 +14,19 @@
 #ifndef SRC_UTIL_H_
 #define SRC_UTIL_H_
 
+#include <filesystem>
+#include <iostream>
 #include <string>
 
 #include "google/protobuf/message.h"
 
 namespace botc {
 using google::protobuf::Message;
+using std::filesystem::path;
 using std::string;
 
-void ReadProtoFromFile(const string& filename, Message* msg);
-void WriteProtoToFile(const string& filename, const Message& msg);
+void ReadProtoFromFile(const path& filename, Message* msg);
+void WriteProtoToFile(const Message& msg, const path& filename);
 }  // namespace botc
 
 #endif  // SRC_UTIL_H_

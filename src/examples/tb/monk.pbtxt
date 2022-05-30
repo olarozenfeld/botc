@@ -1,13 +1,12 @@
 perspective: PLAYER
-setup {
-  players: "Neldor"
-  players: "Elmon"
-  players: "Raibyn"
-  players: "Haera"
-  players: "Tanila"
-  players: "Ivaran"
-  players: "Jaonos"
-}
+script: TROUBLE_BREWING
+players: "Neldor"
+players: "Elmon"
+players: "Raibyn"
+players: "Haera"
+players: "Tanila"
+players: "Ivaran"
+players: "Jaonos"
 events {
   night: 1
 }
@@ -67,49 +66,46 @@ events {
 events {
   claim {
     player: "Jaonos"
-    info {
-      butler_action: "Ivaran"
+    role_action {
+      acting: BUTLER
+      players: "Ivaran"
     }
   }
 }
 events {
   claim {
     player: "Neldor"
-    info {
-      librarian_info {
-        ping1: "Elmon"
-        ping2: "Raibyn"
-        role: DRUNK
-      }
+    role_action {
+      acting: LIBRARIAN
+      players: "Elmon"
+      players: "Raibyn"
+      roles: DRUNK
     }
   }
 }
 events {
   claim {
     player: "Elmon"
-    info {
-      investigator_info {
-        ping1: "Jaonos"
-        ping2: "Neldor"
-        role: BARON
-      }
+    role_action {
+      acting: INVESTIGATOR
+      players: "Jaonos"
+      players: "Neldor"
+      roles: BARON
     }
   }
 }
 events {
   claim {
     player: "Haera"
-    info {
-      investigator_info {
-        ping1: "Neldor"
-        ping2: "Elmon"
-        role: BARON
-      }
+    role_action {
+      acting: INVESTIGATOR
+      players: "Neldor"
+      players: "Elmon"
+      roles: BARON
     }
   }
 }
 # Neldor is in two pings, but Elmon and Haera are double-claiming.
-# Good gets lucky and chooses to vote out Elmon.
 events {
   nomination {
     nominator: "Haera"
@@ -118,13 +114,7 @@ events {
 }
 events {
   vote {
-    votes: "Raibyn"
-    votes: "Haera"
-    votes: "Tanila"
-    votes: "Ivaran"
-    votes: "Jaonos"
-    votes: "Neldor"
-    votes: "Elmon"
+    num_votes: 4
     on_the_block: "Elmon"
   }
 }
@@ -141,8 +131,8 @@ events {
   storyteller_interaction {
     player: "Raibyn"
     role_action {
-      # This happens even though Raibyn is drunk and there is no effect.
-      monk_action: "Ivaran"
+      acting: MONK
+      players: "Ivaran"
     }
   }
 }
@@ -151,13 +141,14 @@ events {
 }
 # Storyteller announces that Ivaran died in the night.
 events {
-  death: "Ivaran"
+  night_death: "Ivaran"
 }
 events {
   claim {
     player: "Jaonos"
-    info {
-      butler_action: "Ivaran"
+    role_action {
+      acting: BUTLER
+      players: "Ivaran"
     }
   }
 }
@@ -165,11 +156,10 @@ events {
 events {
   claim {
     player: "Raibyn"
-    info {
-      monk_action: "Ivaran"
+    role_action {
+      acting: MONK
+      players: "Ivaran"
     }
   }
 }
-# This narrows down the worlds considerably for Good, allowing them
-# to kill the two outsiders who are messing up the count.
-# Are other worlds even possible here?
+# There are 3 possible worlds, one for each demon.

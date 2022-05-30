@@ -25,7 +25,7 @@ cc_library(
     name = "util_lib",
     srcs = ["util.cc"],
     deps = [
-        "@com_github_google_glog//:glog",
+        "@com_google_ortools//ortools/base",
         "@com_google_protobuf//:protobuf",
     ],
     hdrs = ["util.h"],
@@ -54,26 +54,54 @@ cc_test(
 )
 
 cc_library(
-    name = "game_lib",
-    srcs = ["game.cc"],
+    name = "game_sat_solver_lib",
+    srcs = ["game_sat_solver.cc"],
     deps = [
-        ":game_log_cc_proto",
+        ":game_state_lib",
         ":model_wrapper_lib",
         ":solver_cc_proto",
         ":util_lib",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@com_google_ortools//ortools/base",
         "@com_google_ortools//ortools/sat:cp_model",
         "@com_google_ortools//ortools/sat:cp_model_solver",
     ],
-    hdrs = ["game.h"],
+    hdrs = ["game_sat_solver.h"],
 )
 
 cc_test(
-    name = "game_test",
-    srcs = ["game_test.cc"],
+    name = "game_sat_solver_test",
+    srcs = ["game_sat_solver_test.cc"],
+    data = glob(["examples/**"]),
     deps = [
-        ":game_lib",
+        ":game_sat_solver_lib",
+        ":game_state_lib",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "game_state_lib",
+    srcs = ["game_state.cc"],
+    deps = [
+        ":game_log_cc_proto",
+        ":util_lib",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+        "@com_google_ortools//ortools/base",
+    ],
+    hdrs = ["game_state.h"],
+)
+
+cc_test(
+    name = "game_state_test",
+    srcs = ["game_state_test.cc"],
+    deps = [
+        ":game_state_lib",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],
@@ -83,7 +111,8 @@ cc_binary(
     name = "botc",
     srcs = ["main.cc"],
     deps = [
-        ":game_lib",
+        ":game_sat_solver_lib",
+        ":game_state_lib",
         ":util_lib",
         "@com_google_absl//absl/flags:flag",
         "@com_google_protobuf//:protobuf",
@@ -95,6 +124,8 @@ cc_binary(
     name = "ortools_example",
     srcs = ["ortools_example.cc"],
     deps = [
+        ":util_lib",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_ortools//ortools/base",
         "@com_google_ortools//ortools/sat:cp_model",
         "@com_google_ortools//ortools/sat:cp_model_solver",
