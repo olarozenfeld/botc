@@ -17,6 +17,20 @@ package botc;
 
 import "src/game_log.proto";
 
+enum SolverStrategy {
+  // Will choose based on game size.
+  SOLVER_STRATEGY_UNSPECIFIED = 0;
+
+  // Will iteratively solve from scratch with the previously found role
+  // assignment disallowed. This is slow, but reliably slow.
+  ITERATE_ROLE_ASSIGNMENTS = 1;
+
+  // Will use the SAT solver to explore all SAT solutions and map them to role
+  // assignments. This is sometimes faster than the previous option, but can be
+  // prohibitively slow.
+  EXPLORE_ALL_SOLUTIONS = 2;
+}
+
 message SolverRequest {
   message Assumptions {
     message PlayerRole {
@@ -62,6 +76,10 @@ message SolverRequest {
   // variable assignment files alongside world assignments for each solution
   // under the "./tmp/" directory.
   bool debug_mode = 3;
+
+  // Which solver strategy to use. A default one tries to estimate which will be
+  // faster for the current game, but it may be wrong.
+  SolverStrategy strategy = 4;
 }
 
 message SolverResponse {

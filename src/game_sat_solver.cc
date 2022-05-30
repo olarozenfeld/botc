@@ -1375,6 +1375,18 @@ void GameSatSolver::FillWorldFromSolverResponse(
 }
 
 SolverResponse GameSatSolver::Solve(const SolverRequest& request) {
+  switch (request.strategy()) {
+    case ITERATE_ROLE_ASSIGNMENTS:
+      return SolveIteration(request);
+    case EXPLORE_ALL_SOLUTIONS:
+      return SolveFull(request);
+    default:
+      return (g_.NumMinions() > 1 && g_.GetPerspective() != STORYTELLER ?
+              SolveIteration(request) : SolveFull(request));
+  }
+}
+
+SolverResponse GameSatSolver::SolveFull(const SolverRequest& request) {
   SolverResponse result;
   // Making a copy to add assumptions.
   const auto assumptions = CollectAssumptionLiterals(request.assumptions());
