@@ -17,7 +17,7 @@
 #include <fstream>
 #include <iostream>
 
-#include "glog/logging.h"
+#include "ortools/base/logging.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 #include "google/protobuf/text_format.h"
 
@@ -27,7 +27,7 @@ using google::protobuf::io::FileOutputStream;
 using google::protobuf::TextFormat;
 using std::ofstream;
 
-void ReadProtoFromFile(const string& filename, Message* msg) {
+void ReadProtoFromFile(const path& filename, Message* msg) {
   int fi = open(filename.c_str(), O_RDONLY);
   CHECK_NE(fi, -1) << "File not found: " << filename;
   FileInputStream fstream(fi);
@@ -35,7 +35,7 @@ void ReadProtoFromFile(const string& filename, Message* msg) {
   close(fi);
 }
 
-void WriteProtoToFile(const string& filename, const Message& msg) {
+void WriteProtoToFile(const Message& msg, const path& filename) {
   int fd = open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
   CHECK_NE(fd, -1) << "Failed opening file: " << filename;
   FileOutputStream* output = new FileOutputStream(fd);

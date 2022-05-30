@@ -14,6 +14,8 @@
 #ifndef SRC_MODEL_WRAPPER_H_
 #define SRC_MODEL_WRAPPER_H_
 
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -26,10 +28,12 @@
 namespace botc {
 
 using operations_research::sat::CpModelBuilder;
+using operations_research::sat::CpSolverResponse;
 using operations_research::sat::BoolVar;
+using std::filesystem::path;
+using std::map;
 using std::string;
 using std::vector;
-using std::map;
 using std::unordered_map;
 using std::unordered_set;
 
@@ -39,9 +43,18 @@ vector<BoolVar> Not(absl::Span<const BoolVar> literals);
 class ModelWrapper {
  public:
   const CpModelBuilder& Model() const { return model_; }
-  void WriteToFile(const string& filename) const;
-  void WriteVariablesToFile(const string& filename) const;
+  void WriteToFile(const path& filename) const;
+  void WriteVariablesToFile(const path& filename) const;
+  void WriteSatSolutionToFile(const CpSolverResponse& response,
+                              const path& filename);
   BoolVar NewVar(const string& name);
+  const BoolVar* FindVar(const string& name) const {  // null if not defined.
+    const auto it = var_cache_.find(name);
+    if (it != var_cache_.end()) {
+      return &(it->second);
+    }
+    return nullptr;
+  }
   BoolVar FalseVar() { return model_.FalseVar().WithName("0"); }
   BoolVar TrueVar() { return model_.TrueVar().WithName("1"); }
   void FixVariable(const BoolVar& var, bool val);
@@ -73,14 +86,14 @@ class ModelWrapper {
   void AddEqualitySum(absl::Span<const BoolVar> literals, int sum);
   void AddAtMostOne(absl::Span<const BoolVar> literals);
   void AddContradiction(const string& reason);
-  BoolVar CreateEquivalentVarAnd(absl::Span<const BoolVar> literals,
-                                 const string& name);
-  BoolVar CreateEquivalentVarOr(absl::Span<const BoolVar> literals,
+  BoolVar NewEquivalentVarAnd(absl::Span<const BoolVar> literals,
+                              const string& name);
+  BoolVar NewEquivalentVarOr(absl::Span<const BoolVar> literals,
+                             const string& name);
+  BoolVar NewEquivalentVarSum(absl::Span<const BoolVar> literals,
+                              const string& name);
+  BoolVar NewEquivalentVarSumEq(absl::Span<const BoolVar> literals, int sum,
                                 const string& name);
-  BoolVar CreateEquivalentVarSum(absl::Span<const BoolVar> literals,
-                                 const string& name);
-  BoolVar CreateEquivalentVarSumEq(absl::Span<const BoolVar> literals, int sum,
-                                   const string& name);
 
  private:
   CpModelBuilder model_;

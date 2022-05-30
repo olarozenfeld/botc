@@ -1,13 +1,12 @@
 # Good is trying to solve this final 3 with only public information.
 perspective: OBSERVER
-setup {
-  players: "Alke"
-  players: "Pykmo"
-  players: "Viessa"
-  players: "Hagmer"
-  players: "Axylia"
-  # Teensy-ville, no minion or demon info.
-}
+script: TROUBLE_BREWING
+players: "Alke"
+players: "Pykmo"
+players: "Viessa"
+players: "Hagmer"
+players: "Axylia"
+# Teensy-ville, no minion or demon info.
 events {
   night: 1
 }
@@ -49,28 +48,29 @@ events {
 events {
   claim {
     player: "Pykmo"
-    info {
-      butler_action: "Alke"
+    role_action {
+      acting: BUTLER
+      players: "Alke"
     }
   }
 }
 events {
   claim {
     player: "Viessa"
-    info {
-      empath_info: 0
+    role_action {
+      acting: EMPATH
+      number: 0
     }
   }
 }
 events {
   claim {
     player: "Hagmer"
-    info {
-      fortuneteller_action {
-        pick1: "Axylia"
-        pick2: "Viessa"
-        yes: true
-      }
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Axylia"
+      players: "Viessa"
+      yes: true
     }
   }
 }
@@ -96,26 +96,26 @@ events {
 }
 # Storyteller announces that Alke died in the night.
 events {
-  death: "Alke"
+  night_death: "Alke"
 }
 # Pykmo claims Alke is still their master.
 events {
   claim {
     player: "Pykmo"
-    info {
-      butler_action: "Alke"
+    role_action {
+      acting: BUTLER
+      players: "Alke"
     }
   }
 }
 events {
   claim {
     player: "Hagmer"
-    info {
-      fortuneteller_action {
-        pick1: "Axylia"
-        pick2: "Pykmo"
-        yes: true
-      }
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Axylia"
+      players: "Pykmo"
+      yes: true
     }
   }
 }

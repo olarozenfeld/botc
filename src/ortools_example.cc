@@ -13,8 +13,11 @@
 
 #include <stdlib.h>
 
+#include <filesystem>
+#include <iostream>
 #include <memory>
 
+#include "absl/flags/flag.h"
 #include "absl/types/span.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
@@ -24,10 +27,15 @@
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/sorted_interval_list.h"
+#include "src/util.h"
+
+ABSL_FLAG(std::string, model, "", "Model proto file path.");
 
 namespace operations_research {
 namespace sat {
 
+using std::filesystem::path;
+using std::string;
 
 void RabbitsAndPheasantsSat() {
   CpModelBuilder cp_model;
@@ -63,6 +71,30 @@ void SimpleSat() {
     LOG(INFO) << "x=" << SolutionIntegerValue(response, x) << ", y="
               << SolutionIntegerValue(response, y);
   }
+}
+
+void SolveFromFilename(path filename) {
+  CpModelBuilder cp_model;
+  CpModelProto pb;
+  botc::ReadProtoFromFile(filename, &pb);
+  cp_model.CopyFrom(pb);
+
+  Model model;
+  SatParameters parameters;
+  parameters.set_enumerate_all_solutions(true);
+  model.Add(NewSatParameters(parameters));
+  int solutions = 0;
+  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
+    LOG(INFO) << "Found solution " << ++solutions;
+    for (int i = 0; i < r.solution_size(); ++i) {
+      IntVar v = cp_model.GetIntVarFromProtoIndex(i);
+      if (v.Name() != "1" && SolutionIntegerValue(r, v) == 1) {
+        LOG(INFO) << v.Name();
+      }
+    }
+  }));
+  SolveCpModel(cp_model.Build(), &model);
+  LOG(INFO) << "Solutions: " << solutions;
 }
 
 void SimpleSat2() {
@@ -154,8 +186,8 @@ void StepFunctionSampleSat() {
 }  // namespace sat
 }  // namespace operations_research
 
-int main() {
-  operations_research::sat::SimpleSat2();
-
+int main(int argc, char** argv) {
+  absl::ParseCommandLine(argc, argv);
+  operations_research::sat::SolveFromFilename(absl::GetFlag(FLAGS_model));
   return EXIT_SUCCESS;
 }

@@ -1,13 +1,12 @@
 perspective: PLAYER
-setup {
-  players: "Eletha"
-  players: "Alwyn"
-  players: "Goren"
-  players: "Fernia"
-  players: "Merethyl"
-  players: "Shamyrra"
-  players: "Sylvar"
-}
+script: TROUBLE_BREWING
+players: "Eletha"
+players: "Alwyn"
+players: "Goren"
+players: "Fernia"
+players: "Merethyl"
+players: "Shamyrra"
+players: "Sylvar"
 events {
   night: 1
 }
@@ -66,36 +65,33 @@ events {
 events {
   claim {
     player: "Goren"
-    info {
-      investigator_info {
-        ping1: "Sylvar"
-        ping2: "Merethyl"
-        role: SCARLET_WOMAN
-      }
+    role_action {
+      acting: INVESTIGATOR
+      players: "Sylvar"
+      players: "Merethyl"
+      roles: SCARLET_WOMAN
     }
   }
 }
 events {
   claim {
     player: "Merethyl"
-    info {
-      fortuneteller_action {
-        pick1: "Fernia"
-        pick2: "Eletha"
-        yes: true
-      }
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Fernia"
+      players: "Eletha"
+      yes: true
     }
   }
 }
 events {
   claim {
     player: "Eletha"
-    info {
-      washerwoman_info {
-        ping1: "Alwyn"
-        ping2: "Goren"
-        role: INVESTIGATOR
-      }
+    role_action {
+      acting: WASHERWOMAN
+      players: "Alwyn"
+      players: "Goren"
+      roles: INVESTIGATOR
     }
   }
 }
@@ -104,10 +100,12 @@ events {
   storyteller_interaction {
     player: "Fernia"
     role_action {
-      slayer_action: "Merethyl"
+      acting: SLAYER
+      players: "Merethyl"
     }
   }
 }
+# There is no effect.
 events {
   nomination {
     nominator: "Goren"
@@ -129,14 +127,15 @@ events {
 }
 # Storyteller announces that Merethyl died in the night.
 events {
-  death: "Merethyl"
+  night_death: "Merethyl"
 }
 # Alwyn claims he protected Merethyl last night.
 events {
   claim {
     player: "Alwyn"
-    info {
-      monk_action: "Merethyl"
+    role_action {
+      acting: MONK
+      players: "Merethyl"
     }
   }
 }
@@ -149,11 +148,7 @@ events {
 }
 events {
   vote {
-    votes: "Fernia"
-    votes: "Shamyrra"
-    votes: "Sylvar"
-    votes: "Eletha"
-    votes: "Alwyn"
+    num_votes: 4
     on_the_block: "Alwyn"
   }
 }
@@ -171,6 +166,6 @@ events {
 }
 # Storyteller announces that Sylvar has died in the night.
 events {
-  death: "Sylvar"
+  night_death: "Sylvar"
 }
 # And now it is the final 3 with Eletha, Shamyrra and Fernia.

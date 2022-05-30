@@ -51,18 +51,10 @@ message SolverRequest {
   // If set, at most one world will be returned.
   bool stop_after_first_solution = 2;
 
-  // If set, will only return a single world for each possible alive demon.
-  bool solve_for_demon = 4;
-
-  // Only defined if solve_for_demon is also set. This will return the number
-  // of worlds for each possible alive demon in World.count. The role assignment
-  // returned will still be the first encountered solution.
-  bool count_demon_worlds = 3;
-
-  // Debug options.
-  // If present, directory to dump full SAT variable assignment files alongside
-  // world assignments for each solution.
-  string output_sat_model_solutions_dir = 5;
+  // Debug mode. If enabled, we dump the SAT model proto and the full SAT
+  // variable assignment files alongside world assignments for each solution
+  // under the "./tmp/" directory.
+  bool debug_mode = 3;
 }
 
 message SolverResponse {
@@ -74,12 +66,18 @@ message SolverResponse {
     // roles.
     map<string, Role> starting_roles = 2;
 
-    // Could also expose other relevant variables, e.g. starpasses, poisons,
+    // Could also expose other interesting variables, e.g. starpasses, poisons,
     // Mayor bounces, etc.
-
-    // When specified, number of worlds with this demon, if solve_for_demon was
-    // set in the request).
-    int64 count = 3;
   }
   repeated World worlds = 1;
+
+  // The found worlds grouped by the alive demon.
+  message AliveDemon {
+    // The alive demon player.
+    string name = 1;
+    // The number of worlds with this alive demon.
+    int32 count = 2;
+    // TODO(olaola): add heuristic total weight / likelihood.
+  }
+  repeated AliveDemon alive_demon_options = 2;
 }
