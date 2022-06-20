@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <unordered_map>
 #include <utility>
@@ -35,7 +36,10 @@ using std::map;
 using std::pair;
 using std::ostream;
 using std::unordered_map;
+using std::shared_ptr;
 using std::set;
+using Audience = botc::Claim::Audience;
+using SoftRole = botc::Claim::SoftRole;
 
 const int kNoPlayer =  - 1;  // Used in place of player index.
 
@@ -196,6 +200,8 @@ const Script kSupportedScripts[] = { TROUBLE_BREWING };
 bool IsSupportedScript(Script s);
 
 namespace internal {
+// Here and below, the structs are translations of the corresponding proto
+// messages, with player names replaced by indices.
 struct MinionInfo {
   int player = kNoPlayer, demon = kNoPlayer;
   vector<int> minions;
@@ -211,7 +217,6 @@ struct Nomination {
   Time time;
   int nominator = kNoPlayer, nominee = kNoPlayer;
   vector<int> votes;
-  int on_the_block = kNoPlayer;
   bool virgin_proc = false;
 };
 
@@ -227,21 +232,43 @@ struct RoleAction {
   vector<Role> roles;  // Role picks or learned roles (e.g. Undertaker, Sage).
   int number = 0;  // e.g. Chef, Empath, Clockmaker, etc.
   bool yes;  // e.g. Fortune Teller, Seamstress, Artist, etc.
+  Team team;  // e.g. Goon team changes, or weak role action claims.
   GrimoireInfo grimoire_info;  // Spy/Widow are special.
+
+  bool IsWellDefined() const;
 };
 
-struct Claim {
-  Time claim_time;  // The day the claim was made.
+struct Audience {
+  vector<int> players;
+  bool townsquare = true;
+  bool IsEmpty() const { return !townsquare && players.empty(); }
+  static Audience Nobody() { return {.townsquare = false}; }
+  static Audience Townsquare() { return {.townsquare = true}; }
+};
 
-  // Same info as in the Claim proto.
-  Time time;  // The time the claim pertains to. Only required for role claims,
-              // otherwise mirrors the RoleAction.time field.
-  int player = kNoPlayer;
-  // One of role claim, action claim, or effect claim.
+// Same info as in the Claim proto, translating player names into indices.
+struct Claim {
+  Time claim_time;  // The time the claim was made (always during the day).
+  internal::Audience audience = internal::Audience::Townsquare();
+  int player = kNoPlayer;  // The player making the claim.
+  Time time;  // The time the claim pertains to. Only required for claims not
+              // containing a RoleAction field (otherwise time is part of RA).
   botc::Claim::DetailsCase claim_case;
   Role role = ROLE_UNSPECIFIED;
-  RoleAction role_action;
+  SoftRole soft_role;
+  RoleAction role_action;  // Used for both action and effect claims.
+  shared_ptr<Claim> claim;  // Used for both claim propagations and retractions.
 };
+
+struct Whisper {
+  vector<int> players;
+  int initiator = kNoPlayer;
+};
+
+SoftRole NewSoftRole(absl::Span<const Role> roles);
+SoftRole NewSoftRoleNot(absl::Span<const Role> roles);
+SoftRole NewSoftRole(RoleType rt);
+SoftRole NewSoftRoleNot(RoleType rt);
 }  // namespace internal
 
 // This contains an instance of a BOTC game on a particular time.
@@ -274,6 +301,9 @@ class GameState {
   GameState& AddNomination(const Nomination& nomination);
   GameState& AddNomination(const string& nominator, const string& nominee);
   GameState& AddVote(const Vote& vote);
+  GameState& AddVote(int num_votes, const string& on_the_block) {
+    return AddVote({}, num_votes, on_the_block);
+  }
   GameState& AddVote(absl::Span<const string> votes,
                      const string& on_the_block) {
     return AddVote(votes, votes.size(), on_the_block);
@@ -289,21 +319,81 @@ class GameState {
                                         const string& executee);
   GameState& AddDeath(const string& name);
   GameState& AddNightDeath(const string& name);
-  GameState& AddClaim(const Claim& claim);
-  GameState& AddClaim(const string& player, Role role, const Time& t);
-  GameState& AddClaim(const string& player, Role role) {
-    return AddClaim(player, role, Time());
-  }
-  GameState& AddClaim(const string& player,
-                      const internal::RoleAction& ra,
-                      const Time& t);
-  GameState& AddClaim(const string& player, const internal::RoleAction& ra) {
-    return AddClaim(player, ra, Time());
+  GameState& AddClaim(const Claim& claim) {
+    return AddClaim(ClaimFromProto(claim));
   }
   GameState& AddClaim(const internal::Claim& claim);
+
+  internal::Claim NewClaimRole(const string& player, Role role, const Time& t) {
+    return {.player = PlayerIndex(player), .role = role,
+            .time = t, .claim_case = Claim::kRole};
+  }
+  internal::Claim NewClaimSoftRole(const string& player,
+                                   const SoftRole& sr,
+                                   const Time& t) {
+    return {.player = PlayerIndex(player), .soft_role = sr,
+            .time = t, .claim_case = Claim::kSoftRole};
+  }
+  internal::Claim NewClaimRoleAction(const string& player,
+                                     const internal::RoleAction& ra,
+                                     const Time& t) {
+    return {.player = PlayerIndex(player), .role_action = ra,
+            .time = t, .claim_case = Claim::kRoleAction};
+  }
+  internal::Claim NewClaimRoleEffect(const string& player,
+                                     const internal::RoleAction& ra,
+                                     const Time& t) {
+    return {.player = PlayerIndex(player), .role_action = ra,
+            .time = t, .claim_case = Claim::kRoleEffect};
+  }
+  internal::Claim NewClaimPropagation(const string& player,
+                                      const internal::Claim& claim,
+                                      const Time& t) {
+    internal::Claim res({.player = PlayerIndex(player), .time = t,
+                         .claim_case = Claim::kClaim});
+    res.claim.reset(new internal::Claim(claim));
+    return res;
+  }
+  internal::Claim NewClaimRetraction(const string& player,
+                                     const internal::Claim& claim,
+                                     const Time& t) {
+    internal::Claim res({.player = PlayerIndex(player), .time = t,
+                         .claim_case = Claim::kRetraction});
+    res.claim.reset(new internal::Claim(claim));
+    return res;
+  }
+  GameState& AddClaimRole(const string& player, Role role, const Time& t) {
+    return AddClaim(NewClaimRole(player, role, t));
+  }
+  GameState& AddClaimRole(const string& player, Role role) {
+    return AddClaimRole(player, role, Time());
+  }
+  GameState& AddClaimSoftRole(
+      const string& player, const SoftRole& sr, const Time& t);
+  GameState& AddClaimSoftRole(const string& player, const SoftRole& sr) {
+    return AddClaimSoftRole(player, sr, Time());
+  }
+  GameState& AddClaimRoleAction(const string& player,
+                                const internal::RoleAction& ra,
+                                const Time& t) {
+    return AddClaim(NewClaimRoleAction(player, ra, t));
+  }
+  GameState& AddClaimRoleAction(const string& player,
+                                const internal::RoleAction& ra) {
+    return AddClaimRoleAction(player, ra, Time());
+  }
+  GameState& AddClaimRoleEffect(const string& player,
+                                const internal::RoleAction& re,
+                                const Time& t) {
+    return AddClaim(NewClaimRoleEffect(player, re, t));
+  }
+  GameState& AddClaimRoleEffect(const string& player,
+                                const internal::RoleAction& re) {
+    return AddClaimRoleEffect(player, re, Time());
+  }
   // Syntactic sugar for a few role claims at once.
-  GameState& AddAllClaims(absl::Span<const Role> roles,
-                          const string& starting_player);
+  GameState& AddRoleClaims(absl::Span<const Role> roles,
+                           const string& starting_player);
   GameState& AddVictory(Team victory);
 
   // Syntactic sugar for the Storyteller perspective.
@@ -320,6 +410,11 @@ class GameState {
   GameState& AddRoleAction(const string& player, const RoleAction& ra);
   GameState& AddRoleAction(const string& player,
                            const internal::RoleAction& ra);
+  GameState& AddWhisper(absl::Span<const string> players,
+                        const string& initiator);
+  GameState& AddWhisper(absl::Span<const string> players) {
+    return AddWhisper(players, "");
+  }
 
   // Syntactic sugar for creating role actions or info.
   internal::RoleAction NewWasherwomanInfo(const string& ping1,
@@ -407,15 +502,8 @@ class GameState {
     return dead_vote_used_[PlayerIndex(player)];
   }
 
-  string OnTheBlock() const {
-    if (nominations_.size() == 0) {
-      return "";
-    }
-    const auto& nomination = nominations_.back();
-    int name = (nomination.time != cur_time_ ? kNoPlayer :
-        nominations_.back().on_the_block);
-    return PlayerName(name);
-  }
+  string OnTheBlockName() const { return PlayerName(OnTheBlock()); }
+  int OnTheBlock() const { return on_the_block_; }
 
   string ExecutionName(const Time& time) const {
     return PlayerName(Execution(time));
@@ -539,8 +627,15 @@ class GameState {
   absl::Status IsFullyClaimed() const;
 
  private:
+  bool IsStrongClaim(const internal::Claim& c) const;
   RoleAction RoleActionToProto(const internal::RoleAction& ra) const;
   internal::RoleAction RoleActionFromProto(const RoleAction& pb) const;
+  internal::Audience AudienceFromProto(const Audience& a) const;
+  Audience AudienceToProto(const internal::Audience& a) const;
+  internal::Whisper WhisperFromProto(const Whisper& w) const;
+  Whisper WhisperToProto(const internal::Whisper& w) const;
+  internal::Claim ClaimFromProto(const Claim& pb) const;
+  Claim ClaimToProto(const internal::Claim& claim) const;
   void ValidateRoleAction(const internal::RoleAction& ra) const;
   void ValidateGrimoireInfo(const GrimoireInfo& info) const;
   void ValidateRoleChange(int player, Role prev, Role role);
@@ -568,6 +663,7 @@ class GameState {
   vector<int> num_alive_night_;  // # of alive players at start of night x.
   vector<internal::Nomination> nominations_;  // All Nominations.
   vector<bool> dead_vote_used_;  // x player, true when dead and voted.
+  int on_the_block_;  // player currently on the block.
   vector<int> executions_;  // x day
   // Not the same to executions_, because executing dead players is valid.
   vector<int> execution_deaths_;  // x day

@@ -26,11 +26,21 @@
 #include "absl/strings/str_join.h"
 #include "ortools/base/logging.h"
 #include "src/game_log.pb.h"
+#include "src/util.h"
 
 // TODO(olaola):
 // * Validate player interactions (e.g. exactly 1 FT action per night)
 // * Validate night order.
 namespace botc {
+template<typename E> vector<E> RepeatedFieldToVector(
+    google::protobuf::RepeatedField<int> const& rf) {
+  vector<E> r;
+  for (int v : rf) {
+    r.push_back(E(v));
+  }
+  return r;
+}
+
 bool IsRoleInRoles(Role role, absl::Span<const Role> roles) {
   return std::find(roles.begin(), roles.end(), role) != roles.end();
 }
@@ -157,12 +167,41 @@ void SetClaimTime(const Time& t, Claim* claim) {
 }
 }  // namespace
 
+namespace internal {
+
+SoftRole NewSoftRole(absl::Span<const Role> roles) {
+  SoftRole res;
+  for (Role role : roles) {
+    res.add_roles(role);
+  }
+  return res;
+}
+
+SoftRole NewSoftRoleNot(absl::Span<const Role> roles) {
+  SoftRole res = NewSoftRole(roles);
+  res.set_is_not(true);
+  return res;
+}
+
+SoftRole NewSoftRole(RoleType rt) {
+  SoftRole res;
+  res.set_role_type(rt);
+  return res;
+}
+
+SoftRole NewSoftRoleNot(RoleType rt) {
+  SoftRole res = NewSoftRole(rt);
+  res.set_is_not(true);
+  return res;
+}
+}  // namespace internal
+
 GameState::GameState(
     Perspective perspective, Script script, absl::Span<const string> players)
     : perspective_(perspective), script_(script), num_players_(players.size()),
-      cur_time_(), dead_vote_used_(num_players_), victory_(TEAM_UNSPECIFIED),
-      perspective_player_(kNoPlayer), minion_info_(), demon_info_(),
-      st_red_herring_(kNoPlayer) {
+      cur_time_(), dead_vote_used_(num_players_), on_the_block_(kNoPlayer),
+      victory_(TEAM_UNSPECIFIED), perspective_player_(kNoPlayer),
+      minion_info_(), demon_info_(), st_red_herring_(kNoPlayer) {
   CHECK_NE(script_, SCRIPT_UNSPECIFIED)
       << "Need to specify script";
   CHECK(IsSupportedScript(script_))
@@ -249,6 +288,8 @@ GameState& GameState::SetRedHerring(const string& red_herring) {
 }
 
 GameState& GameState::AddEvent(const Event& event) {
+  vector<string> players(event.whisper().players().begin(),
+                         event.whisper().players().end());
   switch (event.details_case()) {
     case Event::kDay:
       AddDay(event.day());
@@ -276,6 +317,9 @@ GameState& GameState::AddEvent(const Event& event) {
       break;
     case Event::kClaim:
       AddClaim(event.claim());
+      break;
+    case Event::kWhisper:
+      AddWhisper(players, event.whisper().initiator());
       break;
     case Event::kVictory:
       AddVictory(event.victory());
@@ -319,6 +363,7 @@ GameState& GameState::AddDay(int count) {
     << cur_time_ << " needs to be followed by " << cur_time_ + 1;
   log_.add_events()->set_day(count);
   ++cur_time_;
+  on_the_block_ = kNoPlayer;
   executions_.push_back(kNoPlayer);
   execution_deaths_.push_back(kNoPlayer);
   night_deaths_.push_back(kNoPlayer);
@@ -429,12 +474,12 @@ GameState& GameState::AddVote(absl::Span<const string> votes,
   }
   int cur_block = PlayerIndex(on_the_block, true);
   int cur_votes = num_votes >= votes.size() ? num_votes : votes.size();
-  if (nomination.on_the_block == kNoPlayer) {
+  if (on_the_block_ == kNoPlayer) {
     int votes_required =
         needed_votes == 0 ? (NumAlive() + 1) / 2 : needed_votes + 1;
     if (cur_votes < votes_required) {
       // Vote fails, nothing changed.
-      CHECK_EQ(cur_block, nomination.on_the_block)
+      CHECK_EQ(cur_block, on_the_block_)
           << absl::StrFormat("Needed %d votes to put %s on the block, got %d",
                              votes_required, players_[nomination.nominee],
                              cur_votes);
@@ -447,7 +492,7 @@ GameState& GameState::AddVote(absl::Span<const string> votes,
   } else {
     if (cur_votes < needed_votes) {
       // Vote fails, nothing changed.
-      CHECK_EQ(cur_block, nomination.on_the_block)
+      CHECK_EQ(cur_block, on_the_block_)
           << absl::StrFormat("Needed %d votes to put %s on the block, got %d",
                              needed_votes + 1, players_[nomination.nominee],
                              cur_votes);
@@ -463,7 +508,7 @@ GameState& GameState::AddVote(absl::Span<const string> votes,
                              players_[nomination.nominee], on_the_block);
     }
   }
-  nomination.on_the_block = cur_block;
+  on_the_block_ = cur_block;
   // TODO(olaola): add Butler constraints here (could only vote with master).
   return *this;
 }
@@ -477,12 +522,12 @@ GameState& GameState::AddExecution(const string& name) {
   CHECK(!nominations_.empty()) << "Execution must have a preceding nomination.";
   internal::Nomination& nomination = nominations_.back();
 
-  if (executee != nomination.on_the_block) {
+  if (executee != on_the_block_) {
     CHECK_EQ(executee, nomination.nominator)
         << absl::StrFormat("Execution needs to be either of %s (who is on the "
                             "block), or of %s who is last to nominate, got %s",
-                            (nomination.on_the_block == kNoPlayer ? "nobody" :
-                             players_[nomination.on_the_block]),
+                            (on_the_block_ == kNoPlayer ? "nobody" :
+                             players_[on_the_block_]),
                             players_[nomination.nominator], name);
     nomination.virgin_proc = true;
   }
@@ -552,50 +597,21 @@ GameState& GameState::AddDeath(const string& name) {
   return *this;
 }
 
-GameState& GameState::AddAllClaims(absl::Span<const Role> roles,
-                                   const string& starting_player) {
+GameState& GameState::AddRoleClaims(absl::Span<const Role> roles,
+                                    const string& starting_player) {
   int i = PlayerIndex(starting_player);
   for (Role role : roles) {
-    AddClaim(players_[i], role);
+    AddClaimRole(players_[i], role);
     i = (i + 1) % num_players_;
   }
   return *this;
 }
 
-GameState& GameState::AddClaim(const Claim& claim) {
-  const auto ra_pb = RoleActionFromProto(claim.role_action());
-  switch (claim.details_case()) {
-    case Claim::kRole:
-      return AddClaim(claim.player(), claim.role(), ClaimTime(claim));
-    case Claim::kRoleAction:
-      return AddClaim(claim.player(), ra_pb, ClaimTime(claim));
-    case Claim::kRoleEffect:
-      CHECK(false) << "Not implemented yet!";
-      break;
-    case Claim::kAlignment:
-      CHECK(false) << "Not implemented yet!";
-      break;
-    default:
-      CHECK(false)
-          << "Expected a valid claim details, got: " << claim.details_case();
-  }
-  return *this;
-}
-
-GameState& GameState::AddClaim(const string& player, Role role, const Time& t) {
-  return AddClaim({.player = PlayerIndex(player), .role = role,
-                   .time = t, .claim_case = Claim::kRole});
-}
-
-GameState& GameState::AddClaim(const string& player,
-                               const internal::RoleAction& ra,
-                               const Time& t) {
-  return AddClaim({.player = PlayerIndex(player),
-                   .time = t, .claim_case = Claim::kRoleAction,
-                   .role_action = ra});
-}
-
 GameState& GameState::AddClaim(const internal::Claim& claim) {
+  *(log_.add_events()->mutable_claim()) = ClaimToProto(claim);
+  if (!IsStrongClaim(claim)) {
+    return *this;
+  }
   claims_.push_back(claim);
   auto& c = claims_.back();
   CHECK(cur_time_.is_day) << absl::StrFormat(
@@ -604,12 +620,9 @@ GameState& GameState::AddClaim(const internal::Claim& claim) {
   c.claim_time = cur_time_;
   auto& ra = c.role_action;
   const bool day_role = IsDayActionRole(ra.acting);
-  Claim* claim_pb = log_.add_events()->mutable_claim();
-  claim_pb->set_player(PlayerName(c.player));
-  SetClaimTime(c.time, claim_pb);
   switch (claim.claim_case) {
     case Claim::kRole:
-      claim_pb->set_role(claim.role);
+      CHECK_NE(claim.role, ROLE_UNSPECIFIED) << "Invalid claimed role";
       if (!c.time.Initialized()) {
         // Guess the role claim time if omitted, from either night 1 or last
         // night. In TB, omitted means night 1, except for the Imp->Recluse
@@ -624,7 +637,6 @@ GameState& GameState::AddClaim(const internal::Claim& claim) {
           << "Role claims need to be for nights, when role tokens are shown";
       break;
     case Claim::kRoleAction:
-      *(claim_pb->mutable_role_action()) = RoleActionToProto(ra);
       CHECK_NE(ra.acting, ROLE_UNSPECIFIED)
           << "Each role action claim needs to specify an acting role";
       if (!c.time.Initialized()) {
@@ -636,15 +648,9 @@ GameState& GameState::AddClaim(const internal::Claim& claim) {
           << absl::StrFormat("Role action claims for %s need to be by %s",
                              Role_Name(ra.acting), day_role ? "day" : "night");
       break;
-    case Claim::kRoleEffect:
-      LOG(WARNING) << "Not implemented yet!";
-      break;
-    case Claim::kAlignment:
-      CHECK(false) << "Not implemented yet!";
-      break;
     default:
       CHECK(false)
-          << "Expected a valid claim details, got: " << claim.claim_case;
+          << "Unexpected claim details: " << claim.claim_case;
   }
   ra.time = c.time;
   if (ra.player == kNoPlayer) {
@@ -671,6 +677,11 @@ vector<int> GameState::AliveNeighbors(int player, const Time& time) const {
   }
   result.push_back(i);
   return result;
+}
+
+GameState& GameState::AddWhisper(absl::Span<const string> players,
+                                 const string& initiator) {
+  return *this;
 }
 
 GameState& GameState::AddVictory(Team victory) {
@@ -890,10 +901,7 @@ GameState& GameState::AddDemonInfo(const string& player,
 GameState& GameState::AddDemonInfo(const string& player,
                                    const DemonInfo& demon_info) {
   const auto& minions = demon_info.minions();
-  vector<Role> bluffs;
-  for (int bluff : demon_info.bluffs()) {
-    bluffs.push_back(Role(bluff));
-  }
+  vector<Role> bluffs = RepeatedFieldToVector<Role>(demon_info.bluffs());
   return AddDemonInfo(
       player, vector<string>(minions.begin(), minions.end()), bluffs);
 }
@@ -1087,6 +1095,7 @@ RoleAction GameState::RoleActionToProto(const internal::RoleAction& ra) const {
   pb.mutable_roles()->Assign(ra.roles.begin(), ra.roles.end());
   pb.set_number(ra.number);
   pb.set_yes(ra.yes);
+  pb.set_team(ra.team);
   if (ra.grimoire_info.DebugString() != "") {  // Horrible hack.
     *(pb.mutable_grimoire_info()) = ra.grimoire_info;
   }
@@ -1096,7 +1105,7 @@ RoleAction GameState::RoleActionToProto(const internal::RoleAction& ra) const {
 internal::RoleAction GameState::RoleActionFromProto(
     const RoleAction& pb) const {
   internal::RoleAction ra({.acting = pb.acting(), .number = pb.number(),
-                           .yes = pb.yes(),
+                           .yes = pb.yes(), .team = pb.team(),
                            .grimoire_info = pb.grimoire_info()});
   for (const string& p : pb.players()) {
     ra.players.push_back(PlayerIndex(p));
@@ -1105,6 +1114,152 @@ internal::RoleAction GameState::RoleActionFromProto(
     ra.roles.push_back(Role(role));
   }
   return ra;
+}
+
+internal::Audience GameState::AudienceFromProto(const Audience& a) const {
+  if (a.nobody()) {
+    return internal::Audience::Nobody();
+  }
+  if (a.players_size() == 0) {
+    return internal::Audience::Townsquare();
+  }
+  internal::Audience res;
+  res.townsquare = false;
+  for (const string& p : a.players()) {
+    res.players.push_back(PlayerIndex(p));
+  }
+  return res;
+}
+
+Audience GameState::AudienceToProto(const internal::Audience& a) const {
+  Audience res;
+  if (a.IsEmpty()) {
+    res.set_nobody(true);
+    return res;
+  }
+  if (a.players.size() == 0) {
+    res.set_townsquare(true);
+    return res;
+  }
+  for (int p : a.players) {
+    res.add_players(PlayerName(p));
+  }
+  return res;
+}
+
+internal::Whisper GameState::WhisperFromProto(const Whisper& w) const {
+  CHECK_GE(w.players_size(), 2) << "A whisper needs to have at least 2 players";
+  internal::Whisper res;
+  for (const string& p : w.players()) {
+    res.players.push_back(PlayerIndex(p));
+  }
+  res.initiator = PlayerIndex(w.initiator(), true);
+  return res;
+}
+
+Whisper GameState::WhisperToProto(const internal::Whisper& w) const {
+  Whisper res;
+  for (int p : w.players) {
+    res.add_players(PlayerName(p));
+  }
+  if (w.initiator != kNoPlayer) {
+    res.set_initiator(PlayerName(w.initiator));
+  }
+  return res;
+}
+
+internal::Claim GameState::ClaimFromProto(const Claim& pb) const {
+  internal::Claim claim({.player = PlayerIndex(pb.player(), true),
+                         .time = ClaimTime(pb),
+                         .audience = AudienceFromProto(pb.audience()),
+                         .claim_case = pb.details_case(),
+                         .role = pb.role(),
+                         .soft_role = pb.soft_role()});
+  if (pb.details_case() == Claim::kRoleAction) {
+    claim.role_action = RoleActionFromProto(pb.role_action());
+  }
+  if (pb.details_case() == Claim::kRoleEffect) {
+    claim.role_action = RoleActionFromProto(pb.role_effect());
+  }
+  if (pb.details_case() == Claim::kClaim) {
+    claim.claim.reset(new internal::Claim(ClaimFromProto(pb.claim())));
+  }
+  if (pb.details_case() == Claim::kRetraction) {
+    claim.claim.reset(new internal::Claim(ClaimFromProto(pb.retraction())));
+  }
+  return claim;
+}
+
+Claim GameState::ClaimToProto(const internal::Claim& claim) const {
+  Claim pb;
+  if (claim.player != kNoPlayer) {
+    pb.set_player(PlayerName(claim.player));
+  }
+  if (!claim.audience.townsquare) {
+    *(pb.mutable_audience()) = AudienceToProto(claim.audience);
+  }
+  SetClaimTime(claim.time, &pb);
+  switch (claim.claim_case) {
+    case Claim::kRole:
+      pb.set_role(claim.role);
+      break;
+    case Claim::kSoftRole:
+      *(pb.mutable_soft_role()) = claim.soft_role;
+      break;
+    case Claim::kRoleAction:
+      *(pb.mutable_role_action()) = RoleActionToProto(claim.role_action);
+      break;
+    case Claim::kRoleEffect:
+      *(pb.mutable_role_effect()) = RoleActionToProto(claim.role_action);
+      break;
+    case Claim::kClaim:
+      *(pb.mutable_claim()) = ClaimToProto(*(claim.claim));
+      break;
+    case Claim::kRetraction:
+      *(pb.mutable_retraction()) = ClaimToProto(*(claim.claim));
+      break;
+    default:
+      CHECK(false) << "Invalid claim case: " << claim.claim_case;
+      break;
+  }
+  return pb;
+}
+
+// Strong claims are the claims used for determining all mechanically possible
+// solutions. Other claims may be used for determining the likelihood of the
+// solutions. For now, all non-strong claims are ignored.
+bool GameState::IsStrongClaim(const internal::Claim& c) const {
+  if (c.player == kNoPlayer || !c.audience.townsquare) {
+    // TODO(olaola): allow Evil to share info in a trusted way.
+    return false;
+  }
+  return (c.claim_case == Claim::kRole ||
+          (c.claim_case == Claim::kRoleAction &&
+           c.role_action.IsWellDefined()));
+  // TODO(olaola): support retractions and role effect claim.
+}
+
+bool internal::RoleAction::IsWellDefined() const {
+  switch (acting) {
+    case WASHERWOMAN:
+    case LIBRARIAN:
+    case INVESTIGATOR:
+      return players.size() == 2 && roles.size() == 1;
+    case CHEF:
+    case EMPATH:
+      return true;  // The number may be 0
+    case FORTUNE_TELLER:
+      return players.size() == 2;
+    case UNDERTAKER:
+      return roles.size() == 1;
+    case MONK:
+    case BUTLER:
+      return players.size() == 1;
+    case RAVENKEEPER:
+      return players.size() == 1 && roles.size() == 1;
+    default:
+      return false;
+  }
 }
 
 vector<const internal::RoleAction*> GameState::GetRoleActions(

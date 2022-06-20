@@ -81,9 +81,6 @@ enum Perspective {
 // when creating the game, before start. In player and observer perspectives,
 // it will only contain public information, such as the Traveler roles.
 message Setup {
-  // The outsider/minion counts can be inferred from the number of players.
-  // TODO: Support travelers.
-
   // The actual roles assigned by the Storyteller. Only visible in the ST
   // perspective. E.g. the Drunk will appear here as DRUNK.
   map<string, Role> player_roles = 1;
@@ -112,7 +109,7 @@ enum Token {
   WASHERWOMAN_TOWNSFOLK = 12;
   WASHERWOMAN_WRONG = 13;
   FORTUNE_TELLER_RED_HERRING = 14;
-  // For travelers, add GOOD and EVIL.
+  // For travelers or the Goon, add GOOD and EVIL.
 }
 
 message GrimoireInfo {
@@ -126,6 +123,8 @@ message GrimoireInfo {
   repeated Role demon_bluffs = 2;
 }
 
+// Used to describe an action by a role ability, or an effect of somebody else's
+// role ability.
 message RoleAction {
   Role acting = 1;  // The role whose ability triggered the action.
   // Generic fields used by many roles in various scripts.
@@ -133,8 +132,13 @@ message RoleAction {
   repeated Role roles = 3;  // Learned or chosen roles.
   int32 number = 4;  // Learned or chosen number.
   bool yes = 5;  // Boolean answer (e.g. Fortune Teller, Artist).
+  // Can be used for making a general claim, e.g. "I heard of an Evil ping on
+  // Joanos". Can be also used for role actions or effects that learn or change
+  // someone's alignment, e.g. the Goon says "I was made Evil night 1, and then
+  // made Good night 3".
+  Team team = 6;
   // Custom fields used by particular roles.
-  GrimoireInfo grimoire_info = 6;  // Spy and Widow.
+  GrimoireInfo grimoire_info = 7;  // Spy and Widow.
 }
 
 message MinionInfo {
@@ -192,8 +196,38 @@ message StorytellerInteraction {
 
 // The claims are how people inform each other of player roles, actions and
 // effects. They are not necessarily true (people lie!)
+// In order to solve the game, only role hard-claims and role action claims for
+// these roles are required. However, we include many other common BOTC claims
+// here, because the information gained from them can contribute to assigning
+// likelihoods to mechanically possible worlds.
 message Claim {
-  string player = 1;  // The player making the claim.
+  message SoftRole {
+    // Claim to be one of these roles.
+    repeated Role roles = 1;
+    // Or you can claim an outsider, or townsfolk.
+    RoleType role_type = 2;
+    // Used for negative claims, e.g. "I am not the Chef".
+    bool is_not = 3;
+  }
+
+  // Describes who the claim was addressed to.
+  message Audience {
+    // All players who directly heard the claim.
+    repeated string players = 1;
+    // Public (townsquare) claims. If the audience field is omitted, this is the
+    // default assumption.
+    bool townsquare = 2;
+    // Set if nobody heard the claim. Used to express statements like "I told
+    // nobody I was actually the Monk until now", which can be useful for
+    // determining who knew what at what time in order to assign likelihoods to
+    // worlds.
+    bool nobody = 3;
+  }
+
+  // The player making the claim.
+  string player = 1;
+  // Who the claim was made to. For public/townsquare claims, omit this field.
+  Audience audience = 2;
 
   // Optional field to indicate when the claimed event took place. If
   // omitted, latest applicable time is assumed, usually last night.
@@ -201,34 +235,57 @@ message Claim {
   // Recluse catching an Imp starpass in final 3, or have been Pit Hag turned,
   // Snakecharmed, etc.
   oneof time {
-    int32 day = 2;
-    int32 night = 3;
+    int32 day = 3;
+    int32 night = 4;
   }
 
-  // A claim is either a role claim, an action claim, or an effect claim.
+  // Claims fall into role claims (hard or soft), role action claims, role
+  // action effect claims, and propagations/retractions of other claims.
   oneof details {
-    // The role player is claiming to have had starting from time.
-    Role role = 4;
+    // The role player is claiming to have had starting from time. This field is
+    // used for had-claims, use soft_role_claim field for soft role claims.
+    Role role = 5;
+    // Use the `role` field for hard-claims, and this field for less restrictive
+    // claims about a player's role.
+    SoftRole soft_role = 6;
     // The info or action that is claimed to have been triggered by the player's
     // ability.
-    RoleAction role_action = 5;
+    RoleAction role_action = 7;
     // An effect someone else's ability is claimed to have had on the player.
     // For example, "Last night the Cerenovous made me mad about being the
-    // Clockmaker".
-    RoleAction role_effect = 6;
-    // The Goon says "I was turned Evil night 2, and now I'm Good again!"
-    Team alignment = 7;
+    // Clockmaker", or "I heard the Widow's call". Also should be used to
+    // indicate when the player's role has been changed due to an effect by
+    // somebody else's ability. In this case, this claim should be used in
+    // conjunction with a regular role claim.
+    RoleAction role_effect = 8;
+    // A propagation of another claim, e.g. "Jess said she was the Undertaker"
+    // or "I heard of an Investigator ping on Mike". There can be even chains of
+    // multiple claim propagations, e.g. "Nick said that Jackie told him she
+    // heard of a Recluse".
+    Claim claim = 9;
+    // Retraction of a previous claim: "X was a lie, disregard it". For most of
+    // role and role action claims, this can be omitted, because it can be
+    // inferred (e.g. someone claims Mayor after claiming Chef will be
+    // interpreted as "I was lying earlier, ignore everything I said before as
+    // the Chef"). However, when considering role effect claims, or claim
+    // propagations, not everything can be inferred, and sometimes explicit
+    // retractions are necessary.
+    // Example: “I was lying earlier, I was actually turned into the Sweetheart
+    // night 3, not the Klutz”, vs "On night 3, I was first turned into the
+    // Klutz, but then right away into the Sweetheart". In this example, if we
+    // want to make the former claim, we need to use this field, otherwise our
+    // consecutive claims about the night 3 role action effect will be
+    // interpreted as both being true.
+    Claim retraction = 10;
   }
+}
 
-  // By default, we always assume that later contradicting claims supercede
-  // earlier ones (e.g. someone claims Mayor after claiming Chef will be
-  // interpreted as "I was lying earlier, ignore everything I said before as the
-  // Chef"). However, in rare cases we need to explicitly set this field.
-  // Example: “I was lying earlier, I was actually turned into the Sweetheart
-  // night 3, not the Klutz”, vs "On night 3, I was first turned into the Klutz,
-  // but then right away into the Sweetheart". In this example, if we want to
-  // make the latter claim, we need to set this field to true.
-  bool add_to_previous_claims = 8;
+// Tracking private conversations. Can help assigning likelihoods to solutions.
+message Whisper {
+  // Who was part of the whisper.
+  repeated string players = 1;
+  // Who initiated the whisper ("Hey, X, want to chat?")
+  string initiator = 2;
 }
 
 // The game is an ordered stream of events.
@@ -247,7 +304,8 @@ message Event {
     // to a demon kill, or any other night-time death effect.
     string night_death = 8;
     Claim claim = 9;
-    Team victory = 10; // Game end. Must be the last event, if present.
+    Whisper whisper = 10;  // A note of a private chat.
+    Team victory = 11; // Game end. Must be the last event, if present.
   }
 }
 

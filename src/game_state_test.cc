@@ -76,18 +76,19 @@ TEST(Proto, ToAndFromProto) {
   g.AddRoleAction("P12", g.NewFortuneTellerAction("P11", "P13", true));
   g.AddRoleAction("P5", g.NewButlerAction("P4"));
   g.AddDay(1);
-  g.AddAllClaims(
+  g.AddRoleClaims(
     {SOLDIER, MAYOR, SOLDIER, SAINT, BUTLER, SLAYER, WASHERWOMAN,
-      LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER, UNDERTAKER, MONK,
-      RAVENKEEPER},
+     LIBRARIAN, INVESTIGATOR, CHEF, EMPATH, FORTUNE_TELLER, UNDERTAKER, MONK,
+     RAVENKEEPER},
     "P1");
-  g.AddClaim("P7", g.NewWasherwomanInfo("P1", "P2", SOLDIER));
-  g.AddClaim("P8", g.NewLibrarianInfo("P5", "P3", BUTLER));
-  g.AddClaim("P9", g.NewInvestigatorInfo("P11", "P12", SCARLET_WOMAN));
-  g.AddClaim("P10", g.NewChefInfo(3));
-  g.AddClaim("P11", g.NewEmpathInfo(0));
-  g.AddClaim("P12", g.NewFortuneTellerAction("P11", "P13", true));
-  g.AddClaim("P5", g.NewButlerAction("P4"));
+  g.AddClaimRoleAction("P7", g.NewWasherwomanInfo("P1", "P2", SOLDIER));
+  g.AddClaimRoleAction("P8", g.NewLibrarianInfo("P5", "P3", BUTLER));
+  g.AddClaimRoleAction(
+      "P9", g.NewInvestigatorInfo("P11", "P12", SCARLET_WOMAN));
+  g.AddClaimRoleAction("P10", g.NewChefInfo(3));
+  g.AddClaimRoleAction("P11", g.NewEmpathInfo(0));
+  g.AddClaimRoleAction("P12", g.NewFortuneTellerAction("P11", "P13", true));
+  g.AddClaimRoleAction("P5", g.NewButlerAction("P4"));
   g.AddRoleAction("P6", g.NewSlayerAction("P1"));  // Drunk Slayer fails.
   g.AddNominationVoteExecution("P9", "P11");
   g.AddDeath("P11");
@@ -101,10 +102,10 @@ TEST(Proto, ToAndFromProto) {
   g.AddRoleAction("P12", g.NewFortuneTellerAction("P9", "P2", false));
   g.AddDay(2);
   g.AddNightDeath("P15");
-  g.AddClaim("P14", g.NewMonkAction("P13"));
-  g.AddClaim("P15", g.NewRavenkeeperAction("P4", POISONER));
-  g.AddClaim("P13", g.NewUndertakerInfo(EMPATH));
-  g.AddClaim("P12", g.NewFortuneTellerAction("P9", "P2", false));
+  g.AddClaimRoleAction("P14", g.NewMonkAction("P13"));
+  g.AddClaimRoleAction("P15", g.NewRavenkeeperAction("P4", POISONER));
+  g.AddClaimRoleAction("P13", g.NewUndertakerInfo(EMPATH));
+  g.AddClaimRoleAction("P12", g.NewFortuneTellerAction("P9", "P2", false));
 
   GameLog pb(g.ToProto());
   // Unfortunately, the testing::EqualsProto matcher is not OSS yet
@@ -113,24 +114,27 @@ TEST(Proto, ToAndFromProto) {
 }
 
 TEST(VotingProcess, ProgressiveVotes) {
-  GameState g(OBSERVER, TROUBLE_BREWING, MakePlayers(5));
+  GameState g(OBSERVER, TROUBLE_BREWING, MakePlayers(6));
   g.AddNight(1);
   g.AddDay(1);
   g.AddNomination("P1", "P2");
   g.AddVote({"P3", "P1"}, "");  // Vote fails
-  EXPECT_EQ(g.OnTheBlock(), "");
+  EXPECT_EQ(g.OnTheBlockName(), "");
   g.AddNomination("P2", "P1");
   g.AddVote({"P2", "P3", "P4"}, "P1");  // Vote succeeds
-  EXPECT_EQ(g.OnTheBlock(), "P1");
+  EXPECT_EQ(g.OnTheBlockName(), "P1");
+  g.AddNomination("P6", "P6");
+  g.AddVote(2, "P1");  // Vote fails
+  EXPECT_EQ(g.OnTheBlockName(), "P1");
   g.AddNomination("P3", "P3");
   g.AddVote({"P4", "P5", "P1"}, "");  // Vote ties
-  EXPECT_EQ(g.OnTheBlock(), "");
+  EXPECT_EQ(g.OnTheBlockName(), "");
   g.AddNomination("P5", "P5");
   g.AddVote({"P5", "P1", "P2"}, "");  // Vote fails
-  EXPECT_EQ(g.OnTheBlock(), "");
+  EXPECT_EQ(g.OnTheBlockName(), "");
   g.AddNomination("P4", "P4");
   g.AddVote({"P5", "P1", "P2", "P4"}, "P4");  // Vote succeeds
-  EXPECT_EQ(g.OnTheBlock(), "P4");
+  EXPECT_EQ(g.OnTheBlockName(), "P4");
   g.AddExecution("P4");
   g.AddDeath("P4");
   g.AddNight(2);
@@ -178,17 +182,17 @@ TEST(GetRoleClaimsByNight, GetRoleClaimsByNightWorks) {
   g.AddNight(1);
   g.AddShownToken("P1", IMP);
   g.AddDay(1);
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", WASHERWOMAN);
+  g.AddClaimRole("P1", MAYOR);
+  g.AddClaimRole("P2", WASHERWOMAN);
   g.AddNight(2);
   g.AddDay(2);
-  g.AddClaim("P3", SOLDIER, Time::Night(2));
-  g.AddClaim("P3", CHEF);  // Retract
+  g.AddClaimRole("P3", SOLDIER, Time::Night(2));
+  g.AddClaimRole("P3", CHEF);  // Retract
   g.AddNight(3);
   g.AddDay(3);
-  g.AddClaim("P4", SAINT, Time::Night(3));
-  g.AddClaim("P5", FORTUNE_TELLER, Time::Night(2));
-  g.AddClaim("P1", SLAYER, Time::Night(2));
+  g.AddClaimRole("P4", SAINT, Time::Night(3));
+  g.AddClaimRole("P5", FORTUNE_TELLER, Time::Night(2));
+  g.AddClaimRole("P1", SLAYER, Time::Night(2));
   auto role_claims = g.GetRoleClaimsByNight();
   vector<vector<Role>> expected({
     {MAYOR, SLAYER, SLAYER},
@@ -257,16 +261,16 @@ TEST(IsFullyClaimed, IsFullyClaimedWorks) {
   g.AddNight(1);
   g.AddShownToken("P1", IMP);
   g.AddDay(1);
-  g.AddClaim("P2", WASHERWOMAN);
+  g.AddClaimRole("P2", WASHERWOMAN);
   g.AddNight(2);
   g.AddDay(2);
-  g.AddClaim("P3", SOLDIER, Time::Night(2));
-  g.AddClaim("P3", CHEF);  // Retract
+  g.AddClaimRole("P3", SOLDIER, Time::Night(2));
+  g.AddClaimRole("P3", CHEF);  // Retract
   g.AddNight(3);
   g.AddDay(3);
   g.AddNightDeath("P4");
-  g.AddClaim("P4", SAINT, Time::Night(3));
-  g.AddClaim("P5", FORTUNE_TELLER);
+  g.AddClaimRole("P4", SAINT, Time::Night(3));
+  g.AddClaimRole("P5", FORTUNE_TELLER);
   EXPECT_EQ(g.IsFullyClaimed().ToString(), "INVALID_ARGUMENT: Missing claims: "
       "P1 is missing a role claim, "
       "P2 is missing a WASHERWOMAN role action claim for night 1, "
@@ -275,21 +279,23 @@ TEST(IsFullyClaimed, IsFullyClaimedWorks) {
       "P5 is missing a FORTUNE_TELLER role action claim for night 1, "
       "P5 is missing a FORTUNE_TELLER role action claim for night 2, "
       "P5 is missing a FORTUNE_TELLER role action claim for night 3");
-  g.AddClaim("P1", MAYOR);
-  g.AddClaim("P2", g.NewWasherwomanInfo("P1", "P3", CHEF));
-  g.AddClaim("P3", g.NewChefInfo(1));
-  g.AddClaim("P4", RAVENKEEPER);
-  g.AddClaim("P5", g.NewFortuneTellerAction("P1", "P2", true), Time::Night(1));
-  g.AddClaim("P5", g.NewFortuneTellerAction("P3", "P4", true), Time::Night(2));
-  g.AddClaim("P5", g.NewFortuneTellerAction("P2", "P5", false));
+  g.AddClaimRole("P1", MAYOR);
+  g.AddClaimRoleAction("P2", g.NewWasherwomanInfo("P1", "P3", CHEF));
+  g.AddClaimRoleAction("P3", g.NewChefInfo(1));
+  g.AddClaimRole("P4", RAVENKEEPER);
+  g.AddClaimRoleAction(
+      "P5", g.NewFortuneTellerAction("P1", "P2", true), Time::Night(1));
+  g.AddClaimRoleAction(
+      "P5", g.NewFortuneTellerAction("P3", "P4", true), Time::Night(2));
+  g.AddClaimRoleAction("P5", g.NewFortuneTellerAction("P2", "P5", false));
   EXPECT_EQ(g.IsFullyClaimed().ToString(), "INVALID_ARGUMENT: Missing claims: "
       "P4 is missing a RAVENKEEPER role action claim for night 3");
-  g.AddClaim("P4", g.NewRavenkeeperAction("P4", POISONER));
+  g.AddClaimRoleAction("P4", g.NewRavenkeeperAction("P4", POISONER));
   EXPECT_TRUE(g.IsFullyClaimed().ok());
-  g.AddClaim("P4", WASHERWOMAN);  // Double-claim.
+  g.AddClaimRole("P4", WASHERWOMAN);  // Double-claim.
   EXPECT_EQ(g.IsFullyClaimed().ToString(), "INVALID_ARGUMENT: Missing claims: "
       "P4 is missing a WASHERWOMAN role action claim for night 1");
-  g.AddClaim("P4", g.NewWasherwomanInfo("P1", "P3", CHEF));
+  g.AddClaimRoleAction("P4", g.NewWasherwomanInfo("P1", "P3", CHEF));
   EXPECT_TRUE(g.IsFullyClaimed().ok());
 }
 
@@ -343,7 +349,7 @@ TEST(IsRolePossible, MinionPerspectiveStarpass) {
   g.AddShownToken("P1", BARON);
   g.AddMinionInfo("P1", "P2", {"P3"});
   g.AddDay(1);
-  g.AddClaim("P4", RECLUSE);
+  g.AddClaimRole("P4", RECLUSE);
   EXPECT_TRUE(g.IsRolePossible("P1", BARON, Time::Day(1)));
   EXPECT_FALSE(g.IsRolePossible("P1", POISONER, Time::Day(1)));
   EXPECT_TRUE(g.IsRolePossible("P3", POISONER, Time::Day(1)));
@@ -364,7 +370,7 @@ TEST(IsRolePossible, MinionPerspectiveStarpass) {
   g.AddNight(2);
   g.AddDay(2);
   g.AddNightDeath("P2");
-  g.AddClaim("P4", IMP);  // Claiming Recluse starpass.
+  g.AddClaimRole("P4", IMP);  // Claiming Recluse starpass.
   for (auto& p : {"P2", "P3", "P4"}) {
     EXPECT_TRUE(g.IsRolePossible(p, IMP, Time::Day(2)));
   }
@@ -379,7 +385,7 @@ TEST(IsRolePossible, MinionPerspectiveCatchStarpass) {
   g.AddShownToken("P1", SCARLET_WOMAN);
   g.AddMinionInfo("P1", "P2", {"P3"});
   g.AddDay(1);
-  g.AddClaim("P4", RECLUSE);
+  g.AddClaimRole("P4", RECLUSE);
   EXPECT_TRUE(g.IsRolePossible("P1", SCARLET_WOMAN, Time::Day(1)));
   EXPECT_FALSE(g.IsRolePossible("P1", POISONER, Time::Day(1)));
   EXPECT_TRUE(g.IsRolePossible("P3", POISONER, Time::Day(1)));
@@ -407,7 +413,7 @@ TEST(IsRolePossible, MinionPerspectiveCatchStarpassNoInfo) {
   g.AddNight(1);
   g.AddShownToken("P1", SCARLET_WOMAN);
   g.AddDay(1);
-  g.AddAllClaims({MAYOR, RAVENKEEPER, VIRGIN, UNDERTAKER, SOLDIER}, "P1");
+  g.AddRoleClaims({MAYOR, RAVENKEEPER, VIRGIN, UNDERTAKER, SOLDIER}, "P1");
   g.AddNight(2);
   g.AddShownToken("P1", IMP);
   g.AddDay(2);
@@ -421,7 +427,7 @@ TEST(IsRolePossible, DemonPerspective) {
   g.AddShownToken("P1", IMP);
   g.AddDemonInfo("P1", {"P2", "P3"}, {EMPATH, SLAYER, MAYOR});
   g.AddDay(1);
-  g.AddClaim("P4", RECLUSE);
+  g.AddClaimRole("P4", RECLUSE);
   EXPECT_TRUE(g.IsRolePossible("P2", SCARLET_WOMAN, Time::Day(1)));
   EXPECT_TRUE(g.IsRolePossible("P3", POISONER, Time::Day(1)));
   EXPECT_TRUE(g.IsRolePossible("P1", IMP, Time::Day(1)));
@@ -448,7 +454,7 @@ TEST(IsRolePossible, DemonPerspective) {
   g.AddNight(2);
   g.AddDay(2);
   g.AddNightDeath("P1");
-  g.AddClaim("P4", IMP);  // Claiming Recluse starpass.
+  g.AddClaimRole("P4", IMP);  // Claiming Recluse starpass.
   for (auto& p : {"P1", "P2", "P3", "P4"}) {
     EXPECT_TRUE(g.IsRolePossible(p, IMP, Time::Day(2)));
   }
@@ -463,7 +469,7 @@ TEST(IsRolePossible, MinionStarpassChain) {
   g.AddShownToken("P4", BARON);
   g.AddMinionInfo("P4", "P2", {"P1", "P13"});
   g.AddDay(1);
-  g.AddAllClaims(
+  g.AddRoleClaims(
       {WASHERWOMAN, MAYOR, BUTLER, RECLUSE, SOLDIER, SLAYER, UNDERTAKER,
        SAINT, VIRGIN, RAVENKEEPER, CHEF, MONK, EMPATH}, "P1");
   g.AddNight(2);
@@ -491,7 +497,7 @@ TEST(IsRolePossible, ScarletWomanProcExecuteImp) {
   g.AddShownToken("P5", SCARLET_WOMAN);
   g.AddMinionInfo("P5", "P1", {});  // P5 SW, P1 Imp
   g.AddDay(1);
-  g.AddAllClaims(
+  g.AddRoleClaims(
       {SOLDIER, MAYOR, RAVENKEEPER, VIRGIN, UNDERTAKER, SLAYER, MONK}, "P1");
   g.AddNominationVoteExecution("P2", "P1");
   g.AddDeath("P1");
@@ -500,7 +506,7 @@ TEST(IsRolePossible, ScarletWomanProcExecuteImp) {
   g.AddRoleAction("P5", g.NewImpAction("P5"));
   g.AddDay(2);
   g.AddNightDeath("P5");
-  g.AddClaim("P7", g.NewMonkAction("P6"));
+  g.AddClaimRoleAction("P7", g.NewMonkAction("P6"));
   EXPECT_TRUE(g.IsRolePossible("P1", IMP, Time::Day(2)));
   EXPECT_FALSE(g.IsRolePossible("P5", IMP, Time::Day(1)));
   EXPECT_TRUE(g.IsRolePossible("P5", IMP, Time::Night(2)));

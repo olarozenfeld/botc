@@ -1,0 +1,813 @@
+# This is an account of A Stud In Scarlet | NRB Play Blood On The Clocktower
+# https://www.youtube.com/watch?v=qZBvRfM3Xow (from Blair's perspective).
+# This includes all the info available to Blair at the time; not just the info
+# required to solve the game by the current solver implementation. Hence, we
+# include soft claims, gossips (claim propagations), whisper tracking, etc.
+perspective: PLAYER
+script: TROUBLE_BREWING
+players: "Luke"
+players: "Oli"
+players: "Blair"
+players: "Tom"
+players: "Elliott"
+players: "Laurie"
+players: "Isaac"
+players: "Jon"
+players: "Sullivan"
+events {
+  night: 1
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    shown_token: FORTUNE_TELLER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Elliott"
+      # Spoiler: Elliott is the Recluse
+      yes: true
+    }
+  }
+}
+events {
+  day: 1
+}
+events {
+  whisper {
+    players: "Elliott"
+    players: "Isaac"
+  }
+}
+events {
+  whisper {
+    players: "Oli"
+    players: "Tom"
+  }
+}
+# Sully publicly claims Empath day 1 (technically, not everyone was in, some
+# people were in private chats, but it was in the townsquare).
+events {
+  claim {
+    player: "Sullivan"
+    role: EMPATH
+  }
+}
+events {
+  claim {
+    player: "Sullivan"
+    role_action {
+      acting: EMPATH
+      # Sully is stitting next to the Imp (Spoiler: Luke), but he is the Drunk.
+      number: 0
+    }
+  }
+}
+events {
+  whisper {
+    players: "Jon"
+    players: "Sullivan"
+    initiator: "Jon"
+  }
+}
+events {
+  whisper {
+    players: "Luke"
+    players: "Laurie"
+    initiator: "Luke"
+  }
+}
+events {
+  claim {
+    player: "Jon"
+    soft_role {
+      role_type: TOWNSFOLK
+    }
+  }
+}
+events {
+  claim {
+    player: "Oli"
+    soft_role {
+      role_type: TOWNSFOLK
+    }
+  }
+}
+events {
+  claim {
+    player: "Tom"
+    soft_role {
+      role_type: TOWNSFOLK
+    }
+  }
+}
+events {
+  whisper {
+    players: "Isaac"
+    players: "Sullivan"
+  }
+}
+events {
+  whisper {
+    players: "Oli"
+    players: "Laurie"
+  }
+}
+events {
+  whisper {
+    players: "Elliott"
+    players: "Blair"
+    initiator: "Elliott"
+  }
+}
+events {
+  claim {
+    player: "Elliott"
+    audience {
+      players: "Blair"
+    }
+    soft_role {
+      role_type: OUTSIDER
+    }
+  }
+}
+# Elliott tells Blair that Isaac claimed Undertaker.
+events {
+  claim {
+    player: "Elliott"
+    audience {
+      players: "Blair"
+    }
+    claim {
+      player: "Isaac"
+      audience {
+        players: "Elliott"
+      }
+      role: UNDERTAKER
+    }
+  }
+}
+events {
+  night: 2
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Oli"
+    }
+  }
+}
+events {
+  day: 2
+}
+events {
+  whisper {
+    players: "Tom"
+    players: "Blair"
+    initiator: "Blair"
+  }
+}
+# Blair now trusts Tom and tells him her role and info.
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+    }
+    role: FORTUNE_TELLER
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+    }
+    night: 1
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Oli"
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+    }
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Elliott"
+      yes: true
+    }
+  }
+}
+# Blair tells Tom that Elliott claimed Outsider.
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+    }
+    claim {
+      player: "Elliott"
+      audience {
+        players: "Blair"
+      }
+      soft_role {
+        role_type: OUTSIDER
+      }
+    }
+  }
+}
+# Blair tells Tom that Isaac claimed Undertaker to Elliott. (Claim propagation
+# chain: Isaac -> Elliott -> Blair -> Tom)
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+    }
+    claim {
+      player: "Elliott"
+      audience {
+        players: "Blair"
+      }
+      claim {
+        player: "Isaac"
+        audience {
+          players: "Elliott"
+        }
+        role: UNDERTAKER
+      }
+    }
+  }
+}
+events {
+  whisper {
+    players: "Isaac"
+    players: "Laurie"
+  }
+}
+events {
+  whisper {
+    players: "Elliott"
+    players: "Oli"
+  }
+}
+events {
+  whisper {
+    players: "Sullivan"
+    players: "Jon"
+    players: "Luke"
+  }
+}
+# Elliott publicly claims Recluse
+events {
+  claim {
+    player: "Elliott"
+    role: RECLUSE
+  }
+}
+# Oli: "I've been told that someone else is an outsider"
+events {
+  claim {
+    player: "Oli"
+    claim {
+      # Note that this is a propagation of a claim chain of an unknown length.
+      # Hence both the player and audience fields are omitted.
+      soft_role {
+        # Nobody can claim Drunk, so Oli is saying he heard of one of these:
+        roles: SAINT
+        roles: BUTLER
+      }
+    }
+  }
+}
+# Jon publicly claims Chef and reveals info
+events {
+  claim {
+    player: "Jon"
+    role: CHEF
+  }
+}
+events {
+  claim {
+    player: "Jon"
+    role_action {
+      acting: CHEF
+      # Because of Elliott the Recluse
+      number: 1
+    }
+  }
+}
+events {
+  claim {
+    player: "Laurie"
+    role: SAINT
+  }
+}
+events {
+  nomination {
+    nominator: "Jon"
+    nominee: "Tom"
+  }
+}
+# Blair claims she can "vouch for Tom".
+events {
+  claim {
+    player: "Blair"
+    role_action {
+      # Blair did not reveal her role. At this point, in TB, it can literally
+      # only be the Fortune Teller, because of how it was phrased, but Blair's
+      # intention was to be vague.
+      players: "Tom"
+      team: GOOD
+    }
+  }
+}
+events {
+  vote {
+    votes: "Jon"
+    votes: "Luke"
+  }
+}
+events {
+  nomination {
+    nominator: "Oli"
+    nominee: "Jon"
+  }
+}
+events {
+  vote {
+    # Unanimous
+    num_votes: 9
+    on_the_block: "Jon"
+  }
+}
+events {
+  execution: "Jon"
+}
+events {
+  death: "Jon"
+}
+events {
+  night: 3
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Laurie"
+      players: "Isaac"
+    }
+  }
+}
+events {
+  day: 3
+}
+# Unsurprisingly, because Tom, even though not claiming Monk directly, was not
+# nearly vague enough about it.
+events {
+  night_death: "Tom"
+}
+events {
+  whisper {
+    players: "Oli"
+    players: "Blair"
+    initiator: "Oli"
+  }
+}
+events {
+  whisper {
+    players: "Tom"
+    players: "Isaac"
+    initiator: "Isaac"
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Oli"
+    }
+    night: 1
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Elliott"
+      yes: true
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Oli"
+    }
+    night: 2
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Oli"
+    }
+  }
+}
+# Oli claims Ravenkeper and suggests a role swap.
+events {
+  claim {
+    player: "Oli"
+    audience {
+      players: "Blair"
+    }
+    role: RAVENKEEPER
+  }
+}
+# Blair didn't know this, but Elliott actually outed Isaac's claim to all of
+# these people (in particular, to Luke the Imp):
+events {
+  whisper {
+    players: "Elliott"
+    players: "Laurie"
+    players: "Luke"
+    players: "Jon"
+    players: "Sullivan"
+  }
+}
+events {
+  claim {
+    player: "Tom"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Tom"
+    night: 2
+    role_action {
+      acting: MONK
+      players: "Sullivan"
+    }
+  }
+}
+events {
+  claim {
+    player: "Tom"
+    night: 3
+    role_action {
+      acting: MONK
+      players: "Sullivan"
+    }
+  }
+}
+events {
+  claim {
+    player: "Sullivan"
+    night: 2
+    role_action {
+      acting: EMPATH
+      number: 0
+    }
+  }
+}
+events {
+  claim {
+    player: "Sullivan"
+    role_action {
+      acting: EMPATH
+      number: 1
+    }
+  }
+}
+# Blair is trying to act out the role swap with Oli, but failing terribly at it:
+events {
+  claim {
+    player: "Blair"
+    role_action {
+      players: "Oli"
+      players: "Isaac"
+      team: GOOD
+    }
+  }
+}
+events {
+  nomination {
+    nominator: "Blair"
+    nominee: "Elliott"
+  }
+}
+events {
+  vote {
+    num_votes: 7
+    on_the_block: "Elliott"
+  }
+}
+events {
+  execution: "Elliott"
+}
+events {
+  death: "Elliott"
+}
+events {
+  night: 4
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Sullivan"
+      players: "Luke"
+      yes: true
+    }
+  }
+}
+events {
+  day: 4
+}
+events {
+  night_death: "Oli"
+}
+events {
+  whisper {
+    players: "Blair"
+    players: "Isaac"
+  }
+}
+events {
+  whisper {
+    players: "Tom"
+    players: "Elliott"
+    players: "Jon"
+    players: "Oli"
+  }
+}
+events {
+  whisper {
+    players: "Sullivan"
+    players: "Luke"
+    players: "Laurie"
+  }
+}
+# Isaac and Elliott join the whisper
+events {
+  whisper {
+    players: "Sullivan"
+    players: "Luke"
+    players: "Laurie"
+    players: "Isaac"
+    players: "Elliott"
+  }
+}
+events {
+  whisper {
+    players: "Tom"
+    players: "Blair"
+    players: "Jon"
+    players: "Oli"
+  }
+}
+events {
+  claim {
+    player: "Oli"
+    audience {
+      players: "Tom"
+      players: "Blair"
+      players: "Jon"
+    }
+    role: RAVENKEEPER
+  }
+}
+events {
+  claim {
+    player: "Oli"
+    audience {
+      players: "Tom"
+      players: "Blair"
+      players: "Jon"
+    }
+    role_action {
+      acting: RAVENKEEPER
+      players: "Laurie"
+      roles: SCARLET_WOMAN
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    audience {
+      players: "Tom"
+      players: "Oli"
+      players: "Jon"
+    }
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Luke"
+      players: "Sullivan"
+      yes: true
+    }
+  }
+}
+# 5 players alive. 
+events {
+  claim {
+    player: "Oli"
+    role: RAVENKEEPER
+  }
+}
+events {
+  claim {
+    player: "Oli"
+    role_action {
+      acting: RAVENKEEPER
+      players: "Laurie"
+      roles: SCARLET_WOMAN
+    }
+  }
+}
+events {
+  claim {
+    player: "Sullivan"
+    role_action {
+      acting: EMPATH
+      number: 0
+    }
+  }
+}
+# Blair outs her full info in the townsquare.
+events {
+  claim {
+    player: "Blair"
+    role: FORTUNE_TELLER
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    night: 1
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Elliott"
+      yes: true
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    night: 2
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Tom"
+      players: "Oli"
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    night: 3
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Laurie"
+      players: "Isaac"
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Luke"
+      players: "Sullivan"
+      yes: true
+    }
+  }
+}
+events {
+  claim {
+    player: "Luke"
+    role: SOLDIER
+  }
+}
+events {
+  nomination {
+    nominator: "Blair"
+    nominee: "Luke"
+  }
+}
+events {
+  vote {
+    votes: "Blair"
+    votes: "Isaac"
+    votes: "Sullivan"
+    on_the_block: "Luke"
+  }
+}
+events {
+  claim {
+    player: "Isaac"
+    role: UNDERTAKER
+  }
+}
+events {
+  claim {
+    player: "Isaac"
+    night: 3
+    role_action {
+      acting: UNDERTAKER
+      roles: CHEF
+    }
+  }
+}
+events {
+  claim {
+    player: "Isaac"
+    night: 4
+    role_action {
+      acting: UNDERTAKER
+      roles: POISONER
+    }
+  }
+}
+# Isaac does not understand how the Recluse works, so he nominates Blair
+events {
+  nomination {
+    nominator: "Isaac"
+    nominee: "Blair"
+  }
+}
+events {
+  vote {
+    votes: "Isaac"
+    votes: "Laurie"
+    # Luke puts his hand down in the last second, correctly believing they
+    # will otherwise just kill him in final 3.
+    on_the_block: "Luke"
+  }
+}
+events {
+  execution: "Luke"
+}
+events {
+  death: "Luke"
+}
+events {
+  night: 5
+}
+events {
+  storyteller_interaction {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Laurie"
+      players: "Isaac"
+      yes: true
+    }
+  }
+}
+events {
+  day: 5
+}
+events {
+  night_death: "Sullivan"
+}
+# Final 3.
+events {
+  claim {
+    player: "Isaac"
+    role_action {
+      acting: UNDERTAKER
+      roles: IMP
+    }
+  }
+}
+events {
+  claim {
+    player: "Blair"
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Laurie"
+      players: "Isaac"
+      yes: true
+    }
+  }
+}
+# Interestingly, from Blair's perspective, 5/16 possible solutions involve Isaac
+# being the demon. All of them require the minion to be the Poisoner.
