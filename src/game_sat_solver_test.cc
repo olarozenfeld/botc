@@ -430,6 +430,23 @@ TEST(Librarian, VirginConfirmsLibrarian) {
   EXPECT_WORLDS_EQ(Solve(g), expected_worlds);
 }
 
+TEST(Librarian, NoOutsiders) {
+  GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", BARON);
+  g.AddDay(1);
+  g.AddRoleClaims({MAYOR, LIBRARIAN, WASHERWOMAN, SLAYER, RECLUSE}, "P1");
+  // Baron learns that P2 or P3 are the Drunk and the Imp (in some order).
+  g.AddClaimRoleAction("P3", g.NewWasherwomanInfo("P2", "P1", LIBRARIAN));
+  g.AddClaimRoleAction("P2", g.NewLibrarianInfoNoOutsiders());
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", BARON}, {"P2", DRUNK}, {"P3", IMP}, {"P4", SLAYER},
+       {"P5", RECLUSE}},
+      {{"P1", BARON}, {"P2", IMP}, {"P3", DRUNK}, {"P4", SLAYER},
+       {"P5", RECLUSE}}});
+  EXPECT_WORLDS_EQ(Solve(g), expected_worlds);
+}
+
 TEST(Virgin, HealthyVirginProc) {
   GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(7));
   g.AddNight(1);

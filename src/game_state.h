@@ -427,6 +427,9 @@ class GameState {
     return {.players = {PlayerIndex(ping1), PlayerIndex(ping2)},
             .roles = {role}, .acting = LIBRARIAN};
   }
+  internal::RoleAction NewLibrarianInfoNoOutsiders() {
+    return {.acting = LIBRARIAN};
+  }
   internal::RoleAction NewInvestigatorInfo(const string& ping1,
                                            const string& ping2, Role role) {
     return {.players = {PlayerIndex(ping1), PlayerIndex(ping2)},

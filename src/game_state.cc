@@ -965,9 +965,8 @@ void GameState::ValidateRoleAction(const internal::RoleAction& ra) const {
   const int max_chef_number = num_minions_ + 1;  // Possible Recluse
   switch (ra.acting) {
     case WASHERWOMAN:
-      CHECK_LE(ra.players.size(), 2)
-          << "Washerwoman should have 1 or 2 pings";
-      CHECK_GT(ra.players.size(), 0) << "Washerwoman should have pings";
+      CHECK_EQ(ra.players.size(), 2)
+          << "Washerwoman should have exactly 2 pings";
       for (int p : ra.players) {
         CHECK_NE(p, kNoPlayer);
       }
@@ -975,10 +974,12 @@ void GameState::ValidateRoleAction(const internal::RoleAction& ra) const {
       CHECK(IsTownsfolkRole(ra.roles[0]));
       break;
     case LIBRARIAN:
-      CHECK_LE(ra.players.size(), 2)
-          << "Librarian should have 1 or 2 pings";
-      CHECK_GT(ra.players.size(), 0)
-          << "Librarian should have pings";
+      if (ra.roles.empty()) {
+        CHECK(ra.players.empty())
+            << "Librarian with no outsiders learns no pings";
+        break;
+      }
+      CHECK_EQ(ra.players.size(), 2) << "Librarian should have exactly 2 pings";
       for (int p : ra.players) {
         CHECK_NE(p, kNoPlayer);
       }
@@ -1242,9 +1243,11 @@ bool GameState::IsStrongClaim(const internal::Claim& c) const {
 bool internal::RoleAction::IsWellDefined() const {
   switch (acting) {
     case WASHERWOMAN:
-    case LIBRARIAN:
     case INVESTIGATOR:
       return players.size() == 2 && roles.size() == 1;
+    case LIBRARIAN:
+      return ((players.size() == 2 && roles.size() == 1) ||
+              (players.size() == 0 && roles.size() == 0));  // No outsiders.
     case CHEF:
     case EMPATH:
       return true;  // The number may be 0

@@ -1,0 +1,318 @@
+# This is an account of a real game. It only contains the minimal info required
+# for the mechanical solve (final 3 claims).
+perspective: PLAYER
+script: TROUBLE_BREWING
+players: "Ola"
+players: "Jon"
+players: "Nick"
+players: "Anna"
+players: "Amie"
+players: "Daniel"
+players: "Jeremy"
+players: "Braden"
+events {
+  night: 1
+}
+events {
+  storyteller_interaction {
+    player: "Ola"
+    shown_token: MONK
+  }
+}
+events {
+  day: 1
+}
+events {
+  claim {
+    player: "Daniel"
+    role: RECLUSE
+  }
+}
+events {
+  claim {
+    player: "Jon"
+    role: LIBRARIAN
+  }
+}
+events {
+  claim {
+    player: "Jon"
+    role_action {
+      acting: LIBRARIAN
+      players: "Daniel"
+      players: "Jeremy"
+      roles: RECLUSE
+    }
+  }
+}
+events {
+  claim {
+    player: "Anna"
+    role: SLAYER
+  }
+}
+events {
+  storyteller_interaction {
+    player: "Anna"
+    role_action {
+      acting: SLAYER
+      players: "Jeremy"
+    }
+  }
+}
+# There were other nominations as well, but eventually we settled on killing
+# the Recluse:
+events {
+  nomination {
+    nominator: "Daniel"
+    nominee: "Daniel"
+  }
+}
+events {
+  vote {
+    num_votes: 5
+    on_the_block: "Daniel"
+  }
+}
+events {
+  execution: "Daniel"
+}
+events {
+  death: "Daniel"
+}
+events {
+  night: 2
+}
+events {
+  storyteller_interaction {
+    player: "Ola"
+    role_action {
+      acting: MONK
+      # Amie was the only one I haven't talked with, others' claims required no
+      # protection.
+      players: "Amie"
+    }
+  }
+}
+events {
+  day: 2
+}
+# No night deaths
+events {
+  nomination {
+    nominator: "Nick"
+    nominee: "Braden"
+  }
+}
+events {
+  vote {
+    num_votes: 5
+    on_the_block: "Braden"
+  }
+}
+events {
+  claim {
+    player: "Braden"
+    role: MAYOR
+  }
+}
+events {
+  execution: "Braden"
+}
+events {
+  death: "Braden"
+}
+events {
+  night: 3
+}
+events {
+  storyteller_interaction {
+    player: "Ola"
+    role_action {
+      acting: MONK
+      # Nick privately claimed FT to me.
+      players: "Nick"
+    }
+  }
+}
+events {
+  day: 3
+}
+# No night deaths again!
+events {
+  nomination {
+    nominator: "Nick"
+    nominee: "Amie"
+  }
+}
+events {
+  vote {
+    num_votes: 5
+    on_the_block: "Amie"
+  }
+}
+events {
+  claim {
+    player: "Amie"
+    role: EMPATH
+  }
+}
+events {
+  claim {
+    player: "Amie"
+    night: 1
+    role_action {
+      acting: EMPATH
+      number: 1
+    }
+  }
+}
+events {
+  claim {
+    player: "Amie"
+    night: 2
+    role_action {
+      acting: EMPATH
+      number: 0
+    }
+  }
+}
+events {
+  claim {
+    player: "Amie"
+    night: 3
+    role_action {
+      acting: EMPATH
+      number: 0
+    }
+  }
+}
+events {
+  execution: "Amie"
+}
+events {
+  death: "Amie"
+}
+events {
+  night: 4
+}
+events {
+  storyteller_interaction {
+    player: "Ola"
+    role_action {
+      acting: MONK
+      players: "Nick"
+    }
+  }
+}
+events {
+  day: 4
+}
+events {
+  night_death: "Ola"
+}
+events {
+  claim {
+    player: "Ola"
+    role: MONK
+  }
+}
+events {
+  claim {
+    player: "Ola"
+    night: 2
+    role_action {
+      acting: MONK
+      players: "Amie"
+    }
+  }
+}
+events {
+  claim {
+    player: "Ola"
+    night: 3
+    role_action {
+      acting: MONK
+      players: "Nick"
+    }
+  }
+}
+events {
+  claim {
+    player: "Ola"
+    night: 4
+    role_action {
+      acting: MONK
+      players: "Nick"
+    }
+  }
+}
+# We sleep on 4
+events {
+  night: 5
+}
+events {
+  day: 5
+}
+events {
+  night_death: "Nick"
+}
+events {
+  claim {
+    player: "Jeremy"
+    role: SOLDIER
+  }
+}
+events {
+  claim {
+    player: "Nick"
+    role: FORTUNE_TELLER
+  }
+}
+events {
+  claim {
+    player: "Nick"
+    night: 1
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Daniel"
+      players: "Jeremy"
+      yes: true
+    }
+  }
+}
+events {
+  claim {
+    player: "Nick"
+    night: 2
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Ola"
+      players: "Braden"
+      yes: true
+    }
+  }
+}
+events {
+  claim {
+    player: "Nick"
+    night: 3
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Ola"
+      players: "Jon"
+    }
+  }
+}
+events {
+  claim {
+    player: "Nick"
+    night: 4
+    role_action {
+      acting: FORTUNE_TELLER
+      players: "Jeremy"
+      players: "Jon"
+      yes: true
+    }
+  }
+}

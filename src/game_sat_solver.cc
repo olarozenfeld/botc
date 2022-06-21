@@ -770,20 +770,32 @@ void GameSatSolver::AddLearningRoleInfoConstraints(
   vector<BoolVar> cases;
   cases.push_back(Not(RoleVar(ra.player, ra.acting, ra.time)));
   cases.push_back(PoisonedVar(ra.player, ra.time));
-  for (Role role : ra.roles) {
-    const Role false_trigger = IsGoodRole(role) ? SPY : RECLUSE;
-    for (int ping : ra.players) {
-      cases.push_back(RoleVar(ping, role, ra.time));
-      if (!IsRolePossible(ping, false_trigger, ra.time)) {
-        continue;
+  if (ra.roles.empty()) {
+    // Specifically a Librarian learning that there are no outsiders.
+    vector<BoolVar> outsiders;
+    for (Role role : OutsiderRoles(script_)) {
+      outsiders.push_back(Not(RoleInPlayVar(role)));
+    }
+    cases.push_back(model_.NewEquivalentVarAnd(
+        outsiders, absl::StrFormat("%s_LIBRARIAN_no_outsiders",
+                                   g_.PlayerName(ra.player))));
+  } else {
+    for (Role role : ra.roles) {
+      const Role false_trigger = IsGoodRole(role) ? SPY : RECLUSE;
+      for (int ping : ra.players) {
+        cases.push_back(RoleVar(ping, role, ra.time));
+        if (!IsRolePossible(ping, false_trigger, ra.time)) {
+          continue;
+        }
+        BoolVar ping_false = RoleVar(ping, false_trigger, ra.time);
+        cases.push_back(IsMinionRole(false_trigger) ?
+            ping_false :
+            model_.NewEquivalentVarAnd(
+                {ping_false, Not(PoisonedVar(ping, ra.time))},
+                absl::StrFormat("%s_ping_%s_healthy_%s", Role_Name(ra.acting),
+                                g_.PlayerName(ping),
+                                Role_Name(false_trigger))));
       }
-      BoolVar ping_false = RoleVar(ping, false_trigger, ra.time);
-      cases.push_back(IsMinionRole(false_trigger) ?
-          ping_false :
-          model_.NewEquivalentVarAnd(
-              {ping_false, Not(PoisonedVar(ping, ra.time))},
-              absl::StrFormat("%s_ping_%s_healthy_%s", Role_Name(ra.acting),
-                              g_.PlayerName(ping), Role_Name(false_trigger))));
     }
   }
   model_.AddOr(cases);
