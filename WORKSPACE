@@ -106,9 +106,6 @@ cc_library(
 
 git_repository(
     name = "com_google_ortools",
-    #branch = "master",
-    commit = "525162feaadaeef640783b2eaea38cf4b623877f",
-    shallow_since = "1647023481 +0100",
-    #tag = "v9.3",
-    remote = "https://github.com/google/or-tools.git",
+    branch = "key-vars",  # My patch to OR-Tools for the key_variables feature.
+    remote = "https://github.com/olarozenfeld/or-tools.git",
 )

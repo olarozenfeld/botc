@@ -211,13 +211,6 @@ class GameSatSolver {
                                    SolverResponse::World* world);
   int SolutionAliveDemon(const CpSolverResponse& response);
 
-  // Calls sat::Solve in a loop while updating the model.
-  SolverResponse SolveIteration(const SolverRequest& request);
-
-  // Calls sat::Solve once to iterate over all boolean solutions. Can be faster,
-  // but can also be prohibitively slow at this point.
-  SolverResponse SolveFull(const SolverRequest& request);
-
   const GameState& g_;  // Current game state.
   const Script script_;  // Part of g_, replicated for convenience.
   // Preprocessed game state variables.
