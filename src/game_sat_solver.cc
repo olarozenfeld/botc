@@ -1387,18 +1387,6 @@ void GameSatSolver::FillWorldFromSolverResponse(
 }
 
 SolverResponse GameSatSolver::Solve(const SolverRequest& request) {
-  switch (request.strategy()) {
-    case ITERATE_ROLE_ASSIGNMENTS:
-      return SolveIteration(request);
-    case EXPLORE_ALL_SOLUTIONS:
-      return SolveFull(request);
-    default:
-      return (g_.NumMinions() > 1 && g_.GetPerspective() != STORYTELLER ?
-              SolveIteration(request) : SolveFull(request));
-  }
-}
-
-SolverResponse GameSatSolver::SolveFull(const SolverRequest& request) {
   SolverResponse result;
   // Making a copy to add assumptions.
   const auto assumptions = CollectAssumptionLiterals(request.assumptions());
@@ -1413,13 +1401,19 @@ SolverResponse GameSatSolver::SolveFull(const SolverRequest& request) {
     WriteProtoToFile(cp_model.Build(), tmp_dir / "model.pbtxt");
   }
   CpSolverResponse response;
-  unordered_map<string, SolverResponse::World*> worlds_per_key;
   map<string, int> num_worlds_per_demon;
   int solutions = 0;
   operations_research::sat::Model model;
   SatParameters parameters;
   parameters.set_enumerate_all_solutions(!request.stop_after_first_solution());
   parameters.set_symmetry_level(0);  // Empirically, this is faster.
+  // We only care about current (and starting?) role assignments, so add them
+  // as key variables:
+  for (int i = 0; i < g_.NumPlayers(); ++i) {
+    for (Role role : AllRoles(script_)) {
+      parameters.add_key_variables(RoleVar(i, role, g_.CurrentTime()).index());
+    }
+  }
   model.Add(NewSatParameters(parameters));
   auto log_progress = [&](bool force) {
     string progress = absl::StrFormat("Found %d solutions ", solutions);
@@ -1440,14 +1434,10 @@ SolverResponse GameSatSolver::SolveFull(const SolverRequest& request) {
     SolverResponse::World cur_world;
     FillWorldFromSolverResponse(r, &cur_world);
     const int demon = SolutionAliveDemon(r);
-    const string key = cur_world.DebugString();
-    if (!worlds_per_key.contains(key)) {
-      worlds_per_key[key] = result.add_worlds();
-      *(worlds_per_key[key]) = cur_world;
-      const string demon_name =
-          demon == kNoPlayer ? "<Dead player>" : g_.PlayerName(demon);
-      num_worlds_per_demon[demon_name]++;
-    }
+    *(result.add_worlds()) = cur_world;
+    const string demon_name =
+        demon == kNoPlayer ? "<Dead player>" : g_.PlayerName(demon);
+    num_worlds_per_demon[demon_name]++;
     log_progress(false);
     if (debug_mode) {
       const path sat_filename = absl::StrFormat("sat_solution_%d", solutions);
@@ -1458,79 +1448,6 @@ SolverResponse GameSatSolver::SolveFull(const SolverRequest& request) {
   }));
   SolveCpModel(cp_model.Build(), &model);
   log_progress(true);
-  for (const auto& it : num_worlds_per_demon) {
-    auto* ado = result.add_alive_demon_options();
-    ado->set_name(it.first);
-    ado->set_count(it.second);
-  }
-  return result;
-}
-
-SolverResponse GameSatSolver::SolveIteration(const SolverRequest& request) {
-  SolverResponse result;
-  // Making a copy to add assumptions repeatedly.
-  const auto assumptions = CollectAssumptionLiterals(request.assumptions());
-  CpModelBuilder model(model_.Model());
-  model.AddBoolAnd(assumptions);
-  path tmp_dir = "./tmp";
-  path solution_dir = tmp_dir / "solutions";
-  const bool debug_mode = request.debug_mode();
-  if (debug_mode) {
-    // Create the ./tmp/solutions directory, if not present.
-    create_directories(solution_dir);
-    WriteProtoToFile(model.Build(), tmp_dir / "model.pbtxt");
-  }
-  CpSolverResponse response;
-  map<string, int> num_worlds_per_demon;
-  int solutions = 0;
-  while (true) {
-    response = operations_research::sat::Solve(model.Build());
-    CHECK(response.status() != CpSolverStatus::MODEL_INVALID);
-    if (response.status() == CpSolverStatus::UNKNOWN) {
-      LOG(WARNING) << "Solver was interrupted, returning partial solution";
-      break;
-    }
-    if (response.status() == CpSolverStatus::INFEASIBLE) {
-      break;
-    }
-    ++solutions;
-    if (debug_mode) {
-      const path resp_filename = absl::StrFormat("resp_%d.pbtxt", solutions);
-      WriteProtoToFile(response, solution_dir / resp_filename);
-    }
-    const int demon = SolutionAliveDemon(response);
-    SolverResponse::World *world = result.add_worlds();
-    FillWorldFromSolverResponse(response, world);
-    const string demon_name =
-        demon == kNoPlayer ? "<Dead player>" : g_.PlayerName(demon);
-    num_worlds_per_demon[demon_name]++;
-    vector<BoolVar> current;
-    for (int i = 0; i < g_.NumPlayers(); ++i) {
-      for (Role role : AllRoles(script_)) {
-        const BoolVar& current_i_role = RoleVar(i, role, g_.CurrentTime());
-        if (SolutionBooleanValue(response, current_i_role)) {
-          current.push_back(current_i_role);
-        }
-      }
-    }
-    string progress = absl::StrFormat("Found %d solutions ", solutions);
-    for (const auto& it : num_worlds_per_demon) {
-      absl::StrAppend(
-          &progress, absl::StrFormat("%s: %d ", it.first, it.second));
-    }
-    cout << progress << endl;
-    if (debug_mode) {
-      const path sat_filename = absl::StrFormat("sat_solution_%d", solutions);
-      model_.WriteSatSolutionToFile(response, solution_dir / sat_filename);
-      const path world_filename = absl::StrFormat("world_%d.pbtxt", solutions);
-      WriteProtoToFile(*world, solution_dir / world_filename);
-    }
-    if (request.stop_after_first_solution()) {
-      break;
-    }
-    // Limit further solutions to different role assignments.
-    model.AddBoolOr(Not(current));  // At least one literal is different.
-  }
   for (const auto& it : num_worlds_per_demon) {
     auto* ado = result.add_alive_demon_options();
     ado->set_name(it.first);
