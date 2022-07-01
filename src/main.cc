@@ -30,8 +30,6 @@ using std::string;
 
 // All files below are in text proto format.
 ABSL_FLAG(string, game_log, "", "Game log file path.");
-ABSL_FLAG(bool, sample_game, false, "Use the sample game in code instead of "
-          "reading the game log from file.");
 ABSL_FLAG(string, solver_parameters, "", "Solver parameters file path.");
 ABSL_FLAG(string, output_solution, "", "Optional solution output file.");
 
