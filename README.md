@@ -34,6 +34,8 @@ You must compile using C++20:
 bazel build --cxxopt=-std=c++20 //src:botc
 ```
 
+Note: on Windows, this option becomes `--cxxopt=-std:c++20`.
+
 You may run tests using:
 
 ```sh
