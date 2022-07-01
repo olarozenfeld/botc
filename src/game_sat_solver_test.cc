@@ -20,10 +20,12 @@
 #include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "tools/cpp/runfiles/runfiles.h"
 
 namespace botc {
 namespace {
 
+using bazel::tools::cpp::runfiles::Runfiles;
 using std::filesystem::path;
 using std::map;
 
@@ -1299,13 +1301,18 @@ TEST(Spy, SpyPerspective) {
 }
 
 TEST(Examples, ExamplesWork) {
+  string error;
+  std::unique_ptr<Runfiles> runfiles(Runfiles::CreateForTest(&error));
   map<path, int> world_counts_by_game({
     {"tb/monk.pbtxt", 3},
     {"tb/teensy_observer.pbtxt", 3},
     {"tb/virgin.pbtxt", 8},
   });
+  string dir = "src/examples/";
   for (const auto& it : world_counts_by_game) {
-    GameState g = GameState::ReadFromFile("src/examples" / it.first);
+    string p = (runfiles == nullptr ? dir + it.first.string() :
+        runfiles->Rlocation("botc/" + dir + it.first.string()));
+    GameState g = GameState::ReadFromFile(p);
     SolverResponse r = Solve(g);
     EXPECT_EQ(r.worlds_size(), it.second);
   }

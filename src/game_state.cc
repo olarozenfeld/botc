@@ -1171,8 +1171,8 @@ Whisper GameState::WhisperToProto(const internal::Whisper& w) const {
 
 internal::Claim GameState::ClaimFromProto(const Claim& pb) const {
   internal::Claim claim({.player = PlayerIndex(pb.player(), true),
-                         .time = ClaimTime(pb),
                          .audience = AudienceFromProto(pb.audience()),
+                         .time = ClaimTime(pb),
                          .claim_case = pb.details_case(),
                          .role = pb.role(),
                          .soft_role = pb.soft_role()});

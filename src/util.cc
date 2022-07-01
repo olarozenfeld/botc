@@ -12,10 +12,13 @@
 // limitations under the License.
 #include "src/util.h"
 
-#include <unistd.h>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 #include "ortools/base/logging.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
@@ -28,20 +31,20 @@ using google::protobuf::TextFormat;
 using std::ofstream;
 
 void ReadProtoFromFile(const path& filename, Message* msg) {
-  int fi = open(filename.c_str(), O_RDONLY);
-  CHECK_NE(fi, -1) << "File not found: " << filename;
-  FileInputStream fstream(fi);
-  TextFormat::Parse(&fstream, msg);
-  close(fi);
+  int ff = open(filename.string().c_str(), O_RDONLY);
+  CHECK_GT(ff, 0) << "File opening file: " << filename;
+  FileInputStream fstream(ff);
+  CHECK(TextFormat::Parse(&fstream, msg)) << "Failed parsing proto from " << filename;
+  close(ff);
 }
 
 void WriteProtoToFile(const Message& msg, const path& filename) {
-  int fd = open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  CHECK_NE(fd, -1) << "Failed opening file: " << filename;
-  FileOutputStream* output = new FileOutputStream(fd);
+  int ff = open(filename.string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  CHECK_GT(ff, 0) << "Failed opening file: " << filename;
+  FileOutputStream* output = new FileOutputStream(ff);
   TextFormat::Print(msg, output);
   output->Flush();
-  close(fd);
+  close(ff);
 }
 
 }  // namespace botc

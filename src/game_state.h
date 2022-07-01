@@ -85,8 +85,8 @@ const RoleMetadata kRoleMetadata[] = {
   // VIRGIN
   {.role_type = TOWNSFOLK},
   // SLAYER
-  {.role_type = TOWNSFOLK, .day_action = true, .public_action = true,
-   .optional_trigger = true},
+  {.role_type = TOWNSFOLK, .day_action = true, .optional_trigger = true,
+   .public_action = true},
   // SOLDIER
   {.role_type = TOWNSFOLK},
   // MAYOR
@@ -249,8 +249,8 @@ struct Audience {
 // Same info as in the Claim proto, translating player names into indices.
 struct Claim {
   Time claim_time;  // The time the claim was made (always during the day).
-  internal::Audience audience = internal::Audience::Townsquare();
   int player = kNoPlayer;  // The player making the claim.
+  internal::Audience audience = internal::Audience::Townsquare();
   Time time;  // The time the claim pertains to. Only required for claims not
               // containing a RoleAction field (otherwise time is part of RA).
   botc::Claim::DetailsCase claim_case;
@@ -279,7 +279,7 @@ class GameState {
   GameState& SetRedHerring(const string& red_herring);
   GameState& SetRoles(const unordered_map<string, Role>& roles);
   GameState& SetRoles(absl::Span<const Role> roles);  // In order of players.
-  static GameState ReadFromFile(const string& filename) {
+  static GameState ReadFromFile(const path& filename) {
     GameLog log;
     ReadProtoFromFile(filename, &log);
     return FromProto(log);
@@ -325,26 +325,26 @@ class GameState {
   GameState& AddClaim(const internal::Claim& claim);
 
   internal::Claim NewClaimRole(const string& player, Role role, const Time& t) {
-    return {.player = PlayerIndex(player), .role = role,
-            .time = t, .claim_case = Claim::kRole};
+    return {.player = PlayerIndex(player), .time = t,
+            .claim_case = Claim::kRole, .role = role};
   }
   internal::Claim NewClaimSoftRole(const string& player,
                                    const SoftRole& sr,
                                    const Time& t) {
-    return {.player = PlayerIndex(player), .soft_role = sr,
-            .time = t, .claim_case = Claim::kSoftRole};
+    return {.player = PlayerIndex(player), .time = t,
+            .claim_case = Claim::kSoftRole, .soft_role = sr};
   }
   internal::Claim NewClaimRoleAction(const string& player,
                                      const internal::RoleAction& ra,
                                      const Time& t) {
-    return {.player = PlayerIndex(player), .role_action = ra,
-            .time = t, .claim_case = Claim::kRoleAction};
+    return {.player = PlayerIndex(player), .time = t,
+            .claim_case = Claim::kRoleAction, .role_action = ra};
   }
   internal::Claim NewClaimRoleEffect(const string& player,
                                      const internal::RoleAction& ra,
                                      const Time& t) {
-    return {.player = PlayerIndex(player), .role_action = ra,
-            .time = t, .claim_case = Claim::kRoleEffect};
+    return {.player = PlayerIndex(player), .time = t,
+            .claim_case = Claim::kRoleEffect, .role_action = ra};
   }
   internal::Claim NewClaimPropagation(const string& player,
                                       const internal::Claim& claim,
@@ -419,57 +419,61 @@ class GameState {
   // Syntactic sugar for creating role actions or info.
   internal::RoleAction NewWasherwomanInfo(const string& ping1,
                                           const string& ping2, Role role) {
-    return {.players = {PlayerIndex(ping1), PlayerIndex(ping2)},
-            .roles = {role}, .acting = WASHERWOMAN};
+    return {.acting = WASHERWOMAN,
+            .players = {PlayerIndex(ping1), PlayerIndex(ping2)},
+            .roles = {role}};
   }
   internal::RoleAction NewLibrarianInfo(const string& ping1,
                                         const string& ping2, Role role) {
-    return {.players = {PlayerIndex(ping1), PlayerIndex(ping2)},
-            .roles = {role}, .acting = LIBRARIAN};
+    return {.acting = LIBRARIAN,
+            .players = {PlayerIndex(ping1), PlayerIndex(ping2)},
+            .roles = {role}};
   }
   internal::RoleAction NewLibrarianInfoNoOutsiders() {
     return {.acting = LIBRARIAN};
   }
   internal::RoleAction NewInvestigatorInfo(const string& ping1,
                                            const string& ping2, Role role) {
-    return {.players = {PlayerIndex(ping1), PlayerIndex(ping2)},
-            .roles = {role}, .acting = INVESTIGATOR};
+    return {.acting = INVESTIGATOR,
+            .players = {PlayerIndex(ping1), PlayerIndex(ping2)},
+            .roles = {role}};
   }
   internal::RoleAction NewChefInfo(int number) {
-    return {.number = number, .acting = CHEF};
+    return {.acting = CHEF, .number = number};
   }
   internal::RoleAction NewEmpathInfo(int number) {
-    return {.number = number, .acting = EMPATH};
+    return {.acting = EMPATH, .number = number};
   }
   internal::RoleAction NewFortuneTellerAction(const string& pick1,
                                               const string& pick2, bool yes) {
-    return {.players = {PlayerIndex(pick1), PlayerIndex(pick2)},
-            .yes = yes, .acting = FORTUNE_TELLER};
+    return {.acting = FORTUNE_TELLER,
+            .players = {PlayerIndex(pick1), PlayerIndex(pick2)},
+            .yes = yes};
   }
   internal::RoleAction NewMonkAction(const string& pick) {
-    return {.players = {PlayerIndex(pick)}, .acting = MONK};
+    return {.acting = MONK, .players = {PlayerIndex(pick)}};
   }
   internal::RoleAction NewButlerAction(const string& pick) {
-    return {.players = {PlayerIndex(pick)}, .acting = BUTLER};
+    return {.acting = BUTLER, .players = {PlayerIndex(pick)}};
   }
   internal::RoleAction NewRavenkeeperAction(const string& pick, Role role) {
-    return {.players = {PlayerIndex(pick)}, .roles = {role},
-            .acting = RAVENKEEPER};
+    return {.acting = RAVENKEEPER,
+            .players = {PlayerIndex(pick)}, .roles = {role}};
   }
   internal::RoleAction NewUndertakerInfo(Role role) {
-    return {.roles = {role}, .acting = UNDERTAKER};
+    return {.acting = UNDERTAKER, .roles = {role}};
   }
   internal::RoleAction NewSlayerAction(const string& pick) {
-    return {.players = {PlayerIndex(pick)}, .acting = SLAYER};
+    return {.acting = SLAYER, .players = {PlayerIndex(pick)}};
   }
   internal::RoleAction NewPoisonerAction(const string& pick) {
-    return {.players = {PlayerIndex(pick)}, .acting = POISONER};
+    return {.acting = POISONER, .players = {PlayerIndex(pick)}};
   }
   internal::RoleAction NewImpAction(const string& pick) {
-    return {.players = {PlayerIndex(pick)}, .acting = IMP};
+    return {.acting = IMP, .players = {PlayerIndex(pick)}};
   }
   internal::RoleAction NewSpyInfo(const GrimoireInfo& spy_info) {
-    return {.grimoire_info = spy_info, .acting = SPY};
+    return {.acting = SPY, .grimoire_info = spy_info};
   }
   GrimoireInfo GrimoireInfoFromRoles(absl::Span<const Role> roles,
                                      Role drunk_shown_token) const;
@@ -604,6 +608,7 @@ class GameState {
       default:
         CHECK(false) << "Invalid game state: unset perspective";
     }
+    return ROLE_UNSPECIFIED;
   }
 
   bool IsRolePossible(int player, Role role, const Time& time) const;

@@ -77,6 +77,7 @@ cc_test(
     deps = [
         ":game_sat_solver_lib",
         ":game_state_lib",
+        "@bazel_tools//tools/cpp/runfiles",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],
