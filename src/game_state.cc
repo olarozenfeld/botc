@@ -364,6 +364,7 @@ GameState& GameState::AddDay(int count) {
   log_.add_events()->set_day(count);
   ++cur_time_;
   on_the_block_ = kNoPlayer;
+  declare_no_executions_ = false;
   executions_.push_back(kNoPlayer);
   execution_deaths_.push_back(kNoPlayer);
   night_deaths_.push_back(kNoPlayer);
@@ -516,7 +517,12 @@ GameState& GameState::AddVote(absl::Span<const string> votes,
 GameState& GameState::AddExecution(const string& name) {
   log_.add_events()->set_execution(name);
   CHECK(cur_time_.is_day) << "Executions can only occur during the day.";
-  const int executee = PlayerIndex(name);
+  CHECK(!declare_no_executions_) << "No executions was already declared.";
+  const int executee = PlayerIndex(name, true);
+  if (executee == kNoPlayer) {
+    declare_no_executions_ = true;
+    return *this;
+  }
   CHECK_EQ(executions_.back(), kNoPlayer)
       << "More than one execution attempted.";
   CHECK(!nominations_.empty()) << "Execution must have a preceding nomination.";
@@ -705,7 +711,7 @@ GameState& GameState::AddAllShownTokens(absl::Span<const Role> roles) {
   return *this;
 }
 
-// Returns the deaths chronilogically. Execution is always the last death.
+// Returns the deaths chronologically. Execution is always the last death.
 vector<int> GameState::Deaths(const Time& time) const {
   vector<int> result;
   if (time.is_day) {

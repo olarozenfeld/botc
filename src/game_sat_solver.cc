@@ -127,7 +127,7 @@ void GameSatSolver::AddChefConstraints(int chef, int chef_number) {
       if (role_claims_[i][0] == RECLUSE) {
         evil_options_i.push_back(
             model_.NewEquivalentVarAnd(
-                {RoleVar(i, RECLUSE, night1), Not(PoisonerPickVar(i, night1))},
+                {RoleVar(i, RECLUSE, night1), Not(PoisonedVar(i, night1))},
                 absl::StrFormat("healthy_recluse_%s_%s", g_.PlayerName(i),
                                 night1)));
       }
@@ -151,7 +151,7 @@ void GameSatSolver::AddChefConstraints(int chef, int chef_number) {
       evil_pairs, chef_number, absl::StrFormat(
           "chef_%s_number_%d", g_.PlayerName(chef), chef_number));
   model_.AddOr(
-    {Not(RoleVar(chef, CHEF, night1)), PoisonerPickVar(chef, night1), correct});
+    {Not(RoleVar(chef, CHEF, night1)), PoisonedVar(chef, night1), correct});
 }
 
 void GameSatSolver::AddEmpathConstraints() {
@@ -167,17 +167,19 @@ void GameSatSolver::AddEmpathConstraints() {
 }
 
 void GameSatSolver::AddEmpathConstraints(
-    int player, int number, const Time& time) {
+    int player, int number, const Time& night_time) {
+  // Empath goes after Evils, so the time of all registration checks needs
+  // to be the daytime:
+  const Time time = night_time + 1;
   vector<int> alive_neighbors = g_.AliveNeighbors(player, time);  // Size 2.
   const int ping1 = alive_neighbors[0], ping2 = alive_neighbors[1];
-  // We assume a Spy will not be poisoned. But Empath goes after the Imp, so
-  // need to check day role.
+  // We assume a Spy will not be poisoned.
   BoolVar ping1_regs_good = model_.NewEquivalentVarOr(
-      {Not(StartingEvilVar(ping1)), RoleVar(ping1, SPY, time + 1)},
+      {Not(StartingEvilVar(ping1)), RoleVar(ping1, SPY, time)},
       absl::StrFormat("empath_%s_registers_%s_good_%s", g_.PlayerName(player),
                       g_.PlayerName(ping1), time));
   BoolVar ping2_regs_good = model_.NewEquivalentVarOr(
-      {Not(StartingEvilVar(ping2)), RoleVar(ping2, SPY, time + 1)},
+      {Not(StartingEvilVar(ping2)), RoleVar(ping2, SPY, time)},
       absl::StrFormat("empath_%s_registers_%s_good_%s", g_.PlayerName(player),
                       g_.PlayerName(ping2), time));
   vector<BoolVar> ping1_regs_evil_cases({StartingEvilVar(ping1)});
@@ -252,11 +254,13 @@ void GameSatSolver::AddFortuneTellerConstraints() {
 }
 
 void GameSatSolver::AddFortuneTellerConstraints(
-    int player, int pick1, int pick2, bool yes, const Time& time) {
+    int player, int pick1, int pick2, bool yes, const Time& night_time) {
+  // Fortune Teller goes after Evils, so time of all registration checks needs
+  // to be the daytime:
+  const Time time = night_time + 1;
   vector<BoolVar> yes_options({
-      // Fortune Teller goes after the Imp, so we need to check day roles.
-      RoleVar(pick1, IMP, time + 1), RedHerringVar(pick1),
-      RoleVar(pick2, IMP, time + 1), RedHerringVar(pick2)});
+      RoleVar(pick1, IMP, time), RedHerringVar(pick1),
+      RoleVar(pick2, IMP, time), RedHerringVar(pick2)});
   BoolVar poisoned_recluse;
   if (yes) {  // We can only infer Recluse possibilities from Yes answer.
     for (int pick : {pick1, pick2}) {
@@ -427,16 +431,20 @@ BoolVar GameSatSolver::AliveRoleVar(Role role, const Time& time) {
       absl::StrFormat("alive_%s_%s", Role_Name(role), time));
 }
 
+// This works for everyone except the Imp. The Imp is poisoned iff they were
+// picked by the Poisoner. Everyone else also need to account for the
+// Poisoner being alive on the *day after* the pick.
 BoolVar GameSatSolver::PoisonedVar(int player, const Time& time) {
   Time night = time.is_day ? time - 1 : time;
-  BoolVar picked = PoisonerPickVar(player, time);
+  BoolVar picked = PoisonerPickVar(player, night);
   const auto night_deaths = g_.Deaths(night);
   if (night_deaths.empty()) {
     return picked;
   }
-  // At most one night death in TB:
+  // This accounts for both a starpass to the Poisoner and Imp killing the
+  // Poisoner in the night.
   return model_.NewEquivalentVarAnd(
-      {Not(RoleVar(night_deaths[0], POISONER, night)), picked},
+      {AliveRoleVar(POISONER, night + 1), picked},
       absl::StrFormat("poisoned_%s_%s", g_.PlayerName(player), night));
 }
 
@@ -591,7 +599,8 @@ void GameSatSolver::AddNoVictoryConstraints(const Time& time) {
   vector<BoolVar> cases;
   // No Mayor win.
   if (num_alive - g_.Deaths(time).size() == 3 &&
-      g_.Execution(time) == kNoPlayer) {
+      g_.Execution(time) == kNoPlayer &&
+      (time < g_.CurrentTime() || g_.NoExecutionsDeclared())) {
     // Mayor was not alive or poisoned.
     for (int mayor : AliveRolePossibilities(MAYOR, time)) {
       cases.push_back(model_.NewEquivalentVarOr(
@@ -971,7 +980,7 @@ void GameSatSolver::AddImpStarpassConstraints(const Time& time) {
     const Role role_claim = role_claims_[i][time.count - 1];
     BoolVar healthy_recluse_i = role_claim == IMP ?
         model_.NewEquivalentVarAnd(
-            {RoleVar(i, RECLUSE, time), Not(PoisonerPickVar(i, time))},
+            {RoleVar(i, RECLUSE, time), Not(PoisonedVar(i, time))},
             absl::StrFormat("healthy_recluse_%s_%s", g_.PlayerName(i), time)) :
         model_.FalseVar();
     for (Role role : {POISONER, SPY, SCARLET_WOMAN, BARON, RECLUSE}) {
@@ -1017,12 +1026,12 @@ void GameSatSolver::AddImpActionConstraints(const internal::RoleAction& ra) {
     // Target was not a healthy Soldier
     if (IsRolePossible(imp_kill, SOLDIER, time)) {
       model_.AddOr({Not(RoleVar(imp_kill, SOLDIER, time)),
-                    PoisonerPickVar(imp_kill, time)});
+                    PoisonedVar(imp_kill, time)});
     }
     // Target was not healthy Monk protected
     for (int monk : PossibleMonkProtecting(imp_kill, time)) {
       model_.AddOr({Not(RoleVar(monk, MONK, time)),
-                    PoisonerPickVar(monk, time)});
+                    PoisonedVar(monk, time)});
     }
     return;
   }
@@ -1034,7 +1043,7 @@ void GameSatSolver::AddImpActionConstraints(const internal::RoleAction& ra) {
     if (IsRolePossible(target, SOLDIER, time)) {
       cases.push_back(model_.NewEquivalentVarAnd(
           {RoleVar(target, SOLDIER, time),
-           Not(PoisonerPickVar(target, time))},
+           Not(PoisonedVar(target, time))},
           absl::StrFormat("healthy_SOLDIER_%s_%s", g_.PlayerName(target),
                           time)));
     }
@@ -1042,17 +1051,17 @@ void GameSatSolver::AddImpActionConstraints(const internal::RoleAction& ra) {
     for (int monk : PossibleMonkProtecting(target, time)) {
       cases.push_back(model_.NewEquivalentVarAnd(
           {RoleVar(monk, MONK, time),
-            Not(PoisonerPickVar(monk, time))},
+           Not(PoisonedVar(monk, time))},
           absl::StrFormat("healthy_MONK_%s_%s", g_.PlayerName(monk), time)));
     }
     // Target was a healthy Mayor, not healthy Monk protected, and bounced to no
     // kill.
     if (IsRolePossible(target, MAYOR, time)) {
       vector<BoolVar> mayor_bounce_no_kill(
-          {RoleVar(target, MAYOR, time), Not(PoisonerPickVar(target, time))});
+          {RoleVar(target, MAYOR, time), Not(PoisonedVar(target, time))});
       for (int monk : PossibleMonkProtecting(target, time)) {
         mayor_bounce_no_kill.push_back(model_.NewEquivalentVarOr(
-            {Not(RoleVar(monk, MONK, time)), PoisonerPickVar(monk, time)},
+            {Not(RoleVar(monk, MONK, time)), PoisonedVar(monk, time)},
             absl::StrFormat("not_healthy_MONK_%s_%s", g_.PlayerName(monk),
                             time)));
       }
@@ -1063,13 +1072,13 @@ void GameSatSolver::AddImpActionConstraints(const internal::RoleAction& ra) {
           // Healthy Soldier.
           if (IsRolePossible(i, SOLDIER, time)) {
             no_kill_cases.push_back(model_.NewEquivalentVarAnd(
-                {RoleVar(i, SOLDIER, time), Not(PoisonerPickVar(i, time))},
+                {RoleVar(i, SOLDIER, time), Not(PoisonedVar(i, time))},
                 absl::StrFormat("healthy_SOLDIER_%s_%s", g_.PlayerName(i),
                                 time)));
           }
           for (int monk : PossibleMonkProtecting(i, time)) {
             no_kill_cases.push_back(model_.NewEquivalentVarAnd(
-                {RoleVar(monk, MONK, time), Not(PoisonerPickVar(monk, time))},
+                {RoleVar(monk, MONK, time), Not(PoisonedVar(monk, time))},
                 absl::StrFormat("healthy_MONK_%s_%s", g_.PlayerName(monk),
                                 time)));
           }
@@ -1088,10 +1097,10 @@ void GameSatSolver::AddImpActionConstraints(const internal::RoleAction& ra) {
   // Kill bounces. Target is a healthy Mayor, not healthy Monk protected.
   if (IsRolePossible(target, MAYOR, time)) {
     model_.AddEquality(RoleVar(target, MAYOR, time), true);
-    model_.AddEquality(PoisonerPickVar(target, time), false);
+    model_.AddEquality(PoisonedVar(target, time), false);
     for (int monk : PossibleMonkProtecting(target, time)) {
       model_.AddOr({Not(RoleVar(monk, MONK, time)),
-                    PoisonerPickVar(monk, time)});
+                    PoisonedVar(monk, time)});
     }
     return;
   }
@@ -1125,12 +1134,12 @@ void GameSatSolver::AddImpConstraints(
     // Target was not a healthy Soldier
     if (IsRolePossible(imp_kill, SOLDIER, time)) {
       model_.AddOr({Not(RoleVar(imp_kill, SOLDIER, time)),
-                    PoisonerPickVar(imp_kill, time)});
+                    PoisonedVar(imp_kill, time)});
     }
     // Target was not healthy Monk protected
     for (int monk : PossibleMonkProtecting(imp_kill, time)) {
       model_.AddOr({Not(RoleVar(monk, MONK, time)),
-                    PoisonerPickVar(monk, time)});
+                    PoisonedVar(monk, time)});
     }
     return;
   }
@@ -1147,7 +1156,7 @@ void GameSatSolver::AddImpConstraints(
     for (int i : AliveRolePossibilities(role, time)) {
       cases.push_back(model_.NewEquivalentVarAnd(
           {RoleVar(i, role, time),
-            Not(PoisonerPickVar(i, time))},
+            Not(PoisonedVar(i, time))},
           absl::StrFormat("healthy_%s_%s_%s", Role_Name(role),
                           g_.PlayerName(i), time)));
     }

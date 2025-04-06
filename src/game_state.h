@@ -523,6 +523,7 @@ class GameState {
     }
     return executions_[day - 1];
   }
+  bool NoExecutionsDeclared() const { return declare_no_executions_; }
   int Execution() const { return Execution(cur_time_); }
 
   int ExecutionDeath(const Time& time) const {
@@ -675,6 +676,7 @@ class GameState {
   vector<int> executions_;  // x day
   // Not the same to executions_, because executing dead players is valid.
   vector<int> execution_deaths_;  // x day
+  bool declare_no_executions_;  // Used for final day only, attempted Mayor win.
   vector<int> night_deaths_;  // x day
   Team victory_;  // The winning team, if the game is over.
   // In player perspective, the player whose perspective this is.
