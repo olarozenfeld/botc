@@ -296,6 +296,10 @@ message Event {
     StorytellerInteraction storyteller_interaction = 3;
     Nomination nomination = 4;
     Vote vote = 5;
+    // Use the empty string to indicate no execution in the rare case where you
+    // explicitly want to note that nobody was executed in final 3, and yet
+    // a Mayor win DID NOT occur, and you still want to solve at that point, and
+    // not after the game continued.
     string execution = 6;
     // Storyteller announces that the player is dead. This can be due to
     // execution, Slayer shot, Tinker, Witch, or any other day-time effect.

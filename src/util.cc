@@ -34,7 +34,8 @@ void ReadProtoFromFile(const path& filename, Message* msg) {
   int ff = open(filename.string().c_str(), O_RDONLY);
   CHECK_GT(ff, 0) << "File opening file: " << filename;
   FileInputStream fstream(ff);
-  CHECK(TextFormat::Parse(&fstream, msg)) << "Failed parsing proto from " << filename;
+  CHECK(TextFormat::Parse(&fstream, msg))
+      << "Failed parsing proto from " << filename;
   close(ff);
 }
 

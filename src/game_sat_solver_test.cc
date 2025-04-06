@@ -13,6 +13,7 @@
 
 #include <filesystem>
 #include <map>
+#include <memory>
 
 #include "src/game_sat_solver.h"
 #include "src/game_state.h"
@@ -806,6 +807,32 @@ TEST(Starpass, PoisonerPerspectiveCatch) {
   EXPECT_WORLDS_EQ(Solve(g), expected_worlds);
 }
 
+TEST(Starpass, BaronPerspectiveCatch) {
+  GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P7", BARON);
+  g.AddDay(1);
+  g.AddRoleClaims(
+      {SOLDIER, EMPATH, MAYOR, RECLUSE, RAVENKEEPER, BUTLER, LIBRARIAN}, "P1");
+  g.AddClaimRoleAction("P2", g.NewEmpathInfo(0));
+  g.AddClaimRoleAction("P6", g.NewButlerAction("P2"));
+  g.AddClaimRoleAction("P7", g.NewLibrarianInfo("P2", "P3", DRUNK));
+  g.AddNominationVoteExecution("P2", "P4");
+  g.AddDeath("P4");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddNightDeath("P2");
+  g.AddClaimRoleAction("P6", g.NewButlerAction("P2"));
+  g.AddNominationVoteExecution("P1", "P6");
+  g.AddDeath("P6");
+  g.AddNight(3);
+  g.AddShownToken("P7", IMP);
+  g.AddDay(3);
+  g.AddNightDeath("P5");
+  g.AddClaimRoleAction("P5", g.NewRavenkeeperAction("P3", IMP));
+  EXPECT_TRUE(IsValidWorld(g));
+}
+
 TEST(Starpass, InvalidPoisonerPerspectiveCatch) {
   GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(5));
   g.AddNight(1);
@@ -1004,6 +1031,26 @@ TEST(FortuneTeller, LearnsTrueInfo) {
   EXPECT_TRUE(IsValidWorld(g));
 }
 
+TEST(FortuneTeller, UnpoisonedAfterStarpass) {
+  GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", POISONER);
+  g.AddRoleAction("P1", g.NewPoisonerAction("P4"));
+  g.AddDay(1);
+  g.AddRoleClaims({MAYOR, FORTUNE_TELLER, SLAYER, VIRGIN, SOLDIER}, "P1");
+  g.AddClaimRoleAction("P2", g.NewFortuneTellerAction("P3", "P4", true));
+  g.AddNominationVoteExecution("P1", "P4");
+  g.AddDeath("P4");
+  g.AddNight(2);
+  g.AddRoleAction("P1", g.NewPoisonerAction("P2"));
+  g.AddShownToken("P1", IMP);
+  g.AddDay(2);
+  g.AddNightDeath("P3");
+  g.AddClaimRoleAction("P2", g.NewFortuneTellerAction("P1", "P3", false));
+  // We know there is no way for the Fortune Teller to be wrong here.
+  EXPECT_FALSE(IsValidWorld(g));
+}
+
 TEST(Empath, LearnsTrueInfo) {
   GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(10));
   g.AddNight(1);
@@ -1046,6 +1093,33 @@ TEST(Empath, LearnsTrueInfo) {
       {"P9", DRUNK}, {"P10", RECLUSE}});
   const SolverRequest& r = SolverRequestBuilder::FromCurrentRoles(roles);
   EXPECT_WORLDS_EQ(Solve(g, r), {roles});
+}
+
+TEST(Empath, GainsInfoOnNewNeighbor) {
+  GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(7));
+  g.AddNight(1);
+  g.AddShownToken("P1", EMPATH);
+  g.AddRoleAction("P1", g.NewEmpathInfo(0));
+  g.AddDay(1);
+  g.AddRoleClaims(
+      {EMPATH, SLAYER, SLAYER, RAVENKEEPER, SOLDIER, CHEF, MONK}, "P1");
+  g.AddClaimRoleAction("P1", g.NewEmpathInfo(0));
+  g.AddClaimRoleAction("P6", g.NewChefInfo(0));
+  // P3 double-claims the Slayer and gets Slayer-shot in the face:
+  g.AddRoleAction("P2", g.NewSlayerAction("P3"));
+  g.AddDeath("P3");  // Scarlet Woman confirmed!
+  g.AddNominationVoteExecution("P1", "P4");
+  g.AddDeath("P4");
+  g.AddNight(2);
+  g.AddRoleAction("P1", g.NewEmpathInfo(1));
+  g.AddDay(2);
+  g.AddNightDeath("P2");
+  g.AddClaimRoleAction("P1", g.NewEmpathInfo(1));
+  g.AddClaimRoleAction("P7", g.NewMonkAction("P1"));
+  vector<unordered_map<string, Role>> expected_worlds({
+      {{"P1", EMPATH}, {"P2", SLAYER}, {"P3", IMP}, {"P4", RAVENKEEPER},
+       {"P5", IMP}, {"P6", CHEF}, {"P7", MONK}}});
+  EXPECT_WORLDS_EQ(Solve(g), expected_worlds);
 }
 
 TEST(Slayer, ImpDeducesDrunkSlayer) {
@@ -1255,6 +1329,27 @@ TEST(GameEndConditions, PoisonedMayorNoWin) {
   EXPECT_FALSE(IsValidWorld(g, r));
 }
 
+TEST(GameEndConditions, MayorMightBeDroisoned) {
+  GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(5));
+  g.AddNight(1);
+  g.AddShownToken("P1", MAYOR);
+  g.AddDay(1);
+  g.AddRoleClaims({MAYOR, SLAYER, VIRGIN, RECLUSE, SAINT}, "P1");
+  g.AddNominationVoteExecution("P1", "P3");
+  g.AddDeath("P3");
+  g.AddNight(2);
+  g.AddDay(2);
+  g.AddNightDeath("P2");  // Final 3.
+  SolverRequest r = SolverRequestBuilder::FromCurrentRoles("P1", DRUNK);
+  EXPECT_TRUE(IsValidWorld(g, r));
+  r = SolverRequestBuilder()
+      .AddCurrentRoles("P1", MAYOR).AddHealthy("P1", 2).Build();
+  EXPECT_TRUE(IsValidWorld(g, r));
+  r = SolverRequestBuilder()
+      .AddCurrentRoles("P1", MAYOR).AddPoisoned("P1", 2).Build();
+  EXPECT_TRUE(IsValidWorld(g, r));
+}
+
 TEST(Spy, SpyPerspective) {
   GameState g(PLAYER, TROUBLE_BREWING, MakePlayers(13));
   g.AddNight(1);
@@ -1306,7 +1401,7 @@ TEST(Examples, ExamplesWork) {
   map<path, int> world_counts_by_game({
     {"tb/monk.pbtxt", 3},
     {"tb/teensy_observer.pbtxt", 3},
-    {"tb/virgin.pbtxt", 8},
+    {"tb/virgin.pbtxt", 9},
   });
   string dir = "src/examples/";
   for (const auto& it : world_counts_by_game) {
